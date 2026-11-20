@@ -458,7 +458,20 @@ function randomMobDropItem(classId = 'swordsman') {
 }
 
 function freshQuest() {
-  return { stage: 1, active: false, kills: 0, herbs: 0, goblins: 0, ore: 0, complete: false, claimed: false };
+  return { stage: 1, active: false, kills: 0, herbs: 0, goblins: 0, ore: 0, scouts: 0, essence: 0, complete: false, claimed: false };
+}
+
+function normalizeQuestProgress(savedQuest) {
+  const quest = { ...freshQuest(), ...(savedQuest && typeof savedQuest === 'object' ? savedQuest : {}) };
+  if (!Object.hasOwn(savedQuest || {}, 'stage') && quest.claimed) {
+    Object.assign(quest, { stage: 2, active: false, kills: 0, herbs: 0, goblins: 0, ore: 0, scouts: 0, essence: 0, complete: false, claimed: false });
+  } else if (quest.stage === 2 && quest.claimed) {
+    Object.assign(quest, { stage: 3, active: false, scouts: 0, essence: 0, complete: false, claimed: false });
+  }
+  quest.stage = clamp(Math.floor(Number(quest.stage) || 1), 1, 3);
+  quest.scouts = Math.max(0, Number(quest.scouts) || 0);
+  quest.essence = Math.max(0, Number(quest.essence) || 0);
+  return quest;
 }
 
 export function freshCharacter(username, classId = 'swordsman') {
@@ -721,12 +734,7 @@ export class World {
     character.shopStock = (Array.isArray(character.shopStock) ? character.shopStock : makeShopStock(classId))
       .map(item => normalizeItem(item, classId)).filter(Boolean);
     const savedQuest = character.quest && typeof character.quest === 'object' ? character.quest : {};
-    character.quest = { ...freshQuest(), ...savedQuest };
-    // The earlier one-step quest awarded an epic item and marked the entire
-    // quest claimed. Treat that reward as the first chain step for old saves.
-    if (!Object.hasOwn(savedQuest, 'stage') && savedQuest.claimed) {
-      Object.assign(character.quest, { stage: 2, active: false, kills: 0, herbs: 0, goblins: 0, ore: 0, complete: false, claimed: false });
-    }
+    character.quest = normalizeQuestProgress(savedQuest);
     const stats = this.statsFor(client);
     client.maxHp = stats.maxHp;
     client.maxMp = stats.maxMp;
@@ -984,6 +992,7 @@ export class World {
         x: round(p.x, 1),
         y: round(p.y, 1),
         amount: p.amount,
+        material: p.material || null,
         item: p.item || null,
         ownerIds: p.kind === 'chest' ? p.ownerIds : undefined,
         openedBy: p.kind === 'chest' ? p.openedBy : undefined,
@@ -1435,12 +1444,16 @@ export class World {
 
   checkQuestComplete(client) {
     const quest = client.character.quest;
-    const ready = quest.stage === 2
-      ? quest.goblins >= 8 && quest.ore >= 4
-      : quest.kills >= 10 && quest.herbs >= 5;
+    const ready = quest.stage === 3
+      ? quest.scouts >= 8 && quest.essence >= 3
+      : quest.stage === 2
+        ? quest.goblins >= 8 && quest.ore >= 4
+        : quest.kills >= 10 && quest.herbs >= 5;
     if (quest.active && !quest.complete && ready) {
       quest.complete = true;
-      this.event(client, 'quest', { text: 'Quest complete! Return to Elder Tarn.' });
+      const chapter = quest.stage === 3 ? 'Shards of the Dunes'
+        : quest.stage === 2 ? 'Echoes Below' : 'The Waking Forest';
+      this.event(client, 'quest', { text: `${chapter} complete! Return to Elder Tarn.` });
       this.sfx(client, 'level');
     }
   }
@@ -1459,6 +1472,10 @@ export class World {
       }
       if (quest.stage === 2 && room.zoneId === 'cave' && enemy.type === 'goblin' && quest.goblins < 8) {
         quest.goblins = Math.min(8, quest.goblins + 1);
+        progressed = true;
+      }
+      if (quest.stage === 3 && room.zoneId === 'desert' && enemy.type === 'scout' && quest.scouts < 8) {
+        quest.scouts = Math.min(8, quest.scouts + 1);
         progressed = true;
       }
       if (progressed) {
@@ -1481,7 +1498,9 @@ export class World {
     if (enemy.type === 'slime' && Math.random() < 0.55) this.spawnPickup(room, 'herb', enemy.x, enemy.y, 1);
     if (enemy.type === 'goblin' && Math.random() < 0.22) this.spawnPickup(room, 'herb', enemy.x, enemy.y, 1);
     if (enemy.type === 'goblin' && Math.random() < 0.48) this.spawnPickup(room, 'material', enemy.x, enemy.y, 1, null, 'ore');
-    if (Math.random() < 0.08) this.spawnPickup(room, 'material', enemy.x, enemy.y, 1, null, 'essence');
+    const quest = source && source.character && source.character.quest;
+    const essenceChance = quest && quest.active && quest.stage === 3 && room.zoneId === 'desert' ? 0.65 : 0.08;
+    if (Math.random() < essenceChance) this.spawnPickup(room, 'material', enemy.x, enemy.y, 1, null, 'essence');
     if (enemy.type !== 'boss' && Math.random() < 0.12) {
       const item = randomMobDropItem(source && source.character ? source.character.classId : 'swordsman');
       this.spawnPickup(room, 'item', enemy.x + rand(-6, 6), enemy.y, 1, item);
@@ -1770,6 +1789,11 @@ export class World {
       materials[key] += pickup.amount;
       if (key === 'ore' && room && room.zoneId === 'cave' && character.quest.active && character.quest.stage === 2) {
         character.quest.ore = Math.min(4, character.quest.ore + pickup.amount);
+        this.checkQuestComplete(client);
+      } else if (key === 'essence' && room && room.zoneId === 'desert' &&
+          character.quest.active && character.quest.stage === 3 && character.quest.essence < 3) {
+        character.quest.essence = Math.min(3, character.quest.essence + pickup.amount);
+        this.event(client, 'system', { text: `Seal essence ${character.quest.essence}/3`, color: '#d7b8ff' });
         this.checkQuestComplete(client);
       }
       this.event(client, 'system', { text: `+${pickup.amount} ${key}`, color: '#9ce7ff' });
@@ -2300,28 +2324,35 @@ export class World {
     if (npc.type === 'shop') {
       this.emitShopList(client);
     } else if (npc.type === 'guard') {
-      this.event(client, 'system', { text: `${npc.name}: The wardstones are dimming. I heard something wake beneath Mount Veyr.`, color: '#9ce7ff' });
+      this.event(client, 'system', { text: `${npc.name}: Three wardstones seal Mount Veyr. One is dark already; the forest road may hold the first clue.`, color: '#9ce7ff' });
     } else if (npc.type === 'healer') {
-      this.event(client, 'system', { text: `${npc.name}: The forest herbs glow faintly since the seal cracked. Elder Tarn may need them for the wardstones.`, color: '#a8f0cd' });
+      this.event(client, 'system', { text: `${npc.name}: The herbs glow when the wardstones weaken. They may restore the first ward—and reveal what lies below.`, color: '#a8f0cd' });
     } else if (npc.type === 'scout') {
-      this.event(client, 'system', { text: `${npc.name}: I saw a cold light flicker below Mount Veyr. The old road leads to the cave.`, color: '#c7e8ff' });
+      const clue = client.character.quest.stage >= 3
+        ? 'The Shards of the Dunes scouts carry purple seal-essence. Follow it back to Mount Veyr.'
+        : 'I saw a cold light below Mount Veyr. The cave road is only the second part of the trail; it continues into the dunes.';
+      this.event(client, 'system', { text: `${npc.name}: ${clue}`, color: '#c7e8ff' });
     } else if (npc.type === 'blacksmith') {
-      this.event(client, 'system', { text: `${npc.name}: The mountain trembles at night. A strong weapon may help you survive the cave.`, color: '#ffc18b' });
+      this.event(client, 'system', { text: `${npc.name}: Goblins are mining the wardstone ore beneath the mountain. Bring some back and I can mend your gear.`, color: '#ffc18b' });
     } else if (npc.type === 'villager') {
-      this.event(client, 'system', { text: `${npc.name}: Slimes came out of the woods after the seal broke. Please help Elder Tarn.`, color: '#f0d28e' });
+      this.event(client, 'system', { text: `${npc.name}: The slimes came when the first ward went dark. Elder Tarn says their trail leads to a much older secret.`, color: '#f0d28e' });
     } else {
       const quest = client.character.quest;
       const status = quest.claimed
-        ? 'You have completed both requests. Thank you, hero!'
+        ? 'You restored all three wardstones and uncovered the source of the cold light. Hearthvale will remember you, hero!'
         : quest.complete
-          ? 'You finished! Press the turn-in button for your reward.'
+          ? 'You finished this chapter! Return to the journal and turn it in.'
           : quest.active
-            ? quest.stage === 2
-              ? `Cave Patrol: ${quest.goblins}/8 goblins, ${quest.ore}/4 ore.`
-              : `Forest Cleanup: ${quest.kills}/10 slimes, ${quest.herbs}/5 herbs.`
-            : quest.stage === 2
-              ? 'The wardstones are failing. Clear 8 goblins and bring me 4 ore from the cave.'
-              : 'The broken seal has stirred the forest. Defeat 10 slimes and bring me 5 herbs for the village wards.';
+            ? quest.stage === 3
+              ? `Shards of the Dunes: ${quest.scouts}/8 scouts, ${quest.essence}/3 essence.`
+              : quest.stage === 2
+                ? `Echoes Below: ${quest.goblins}/8 goblins, ${quest.ore}/4 ore.`
+                : `The Waking Forest: ${quest.kills}/10 slimes, ${quest.herbs}/5 herbs.`
+            : quest.stage === 3
+              ? 'Chapter III — Shards of the Dunes: defeat 8 scouts and recover 3 seal-essence in the desert.'
+              : quest.stage === 2
+                ? 'Chapter II — Echoes Below: defeat 8 goblins and bring 4 wardstone ore from the cave.'
+                : 'Chapter I — The Waking Forest: defeat 10 slimes and gather 5 glowing herbs for the first ward.';
       this.event(client, 'system', { text: `${npc.name}: ${status}`, color: '#ffd75e' });
     }
   }
@@ -2645,13 +2676,23 @@ export class World {
 
   handleQuestAccept(client) {
     const quest = client.character.quest;
-    if (quest.claimed) { this.error(client, 'You have completed both requests.'); return; }
+    if (quest.claimed) { this.error(client, 'You have restored all three wardstones.'); return; }
     if (quest.complete) { this.handleQuestTurnIn(client); return; }
     if (quest.active) { this.error(client, 'This quest was already accepted. Finish its objectives and turn it in for your reward.'); return; }
     quest.active = true;
-    this.event(client, 'quest', { text: quest.stage === 2
-      ? 'Elder Tarn: The wardstones are failing. Clear 8 goblins and bring 4 ore from the cave.'
-      : 'Elder Tarn: The broken seal has stirred the forest. Defeat 10 slimes and bring 5 herbs for the wards.' });
+    const chapter = quest.stage === 3 ? 'Chapter III — Shards of the Dunes'
+      : quest.stage === 2 ? 'Chapter II — Echoes Below' : 'Chapter I — The Waking Forest';
+    const opening = quest.stage === 3
+      ? 'Elder Tarn: The repaired ward showed us the truth. The desert scouts carry the missing seal-essence.'
+      : quest.stage === 2
+        ? 'Elder Tarn: The herbs revealed a map to a buried gate beneath Mount Veyr.'
+        : 'Elder Tarn: The seal has cracked. The forest wards are our first defense.';
+    const objective = quest.stage === 3
+      ? 'Defeat 8 scouts and gather 3 essence in the desert.'
+      : quest.stage === 2
+        ? 'Defeat 8 goblins and gather 4 ore in the cave.'
+        : 'Defeat 10 slimes and gather 5 herbs in the forest.';
+    this.event(client, 'quest', { text: `${chapter}. ${opening} ${objective}` });
     this.sfx(client, 'ui');
     this.sendCharacter(client);
   }
@@ -2660,15 +2701,23 @@ export class World {
     const quest = client.character.quest;
     if (!quest.complete || quest.claimed) { this.error(client, 'The quest is not ready to turn in.'); return; }
 
-    if (quest.stage === 1) {
-      quest.stage = 2;
+    if (quest.stage < 3) {
+      const completedStage = quest.stage;
+      const rewards = completedStage === 1 ? { gold: 100, xp: 180 } : { gold: 140, xp: 260 };
+      quest.stage++;
       quest.active = false;
       quest.complete = false;
       quest.kills = 0;
       quest.herbs = 0;
-      client.character.gold += 100;
-      this.gainXp(client, 180, false);
-      this.event(client, 'quest', { text: 'Forest Cleanup complete! +100 gold, +180 XP. Cave Patrol unlocked.' });
+      quest.goblins = 0;
+      quest.ore = 0;
+      quest.scouts = 0;
+      quest.essence = 0;
+      client.character.gold += rewards.gold;
+      this.gainXp(client, rewards.xp, false);
+      const completedChapter = completedStage === 1 ? 'The Waking Forest' : 'Echoes Below';
+      const nextChapter = completedStage === 1 ? 'Echoes Below' : 'Shards of the Dunes';
+      this.event(client, 'quest', { text: `${completedChapter} complete! +${rewards.gold} gold, +${rewards.xp} XP. ${nextChapter} unlocked.` });
       this.sfx(client, 'level');
       this.sendCharacter(client);
       return;
@@ -2676,11 +2725,11 @@ export class World {
 
     quest.claimed = true;
     quest.active = false;
-    client.character.gold += 140;
-    this.gainXp(client, 260, false);
+    client.character.gold += 220;
+    this.gainXp(client, 420, false);
 
     const reward = makeItem('Elder Amulet', 'armor', 'epic', { hp: 30, defense: 6, mana: 20, manaRegen: 1 }, {
-      classId: client.character.classId, spriteColor: '#e3b7ff', icon: 'A', desc: 'Reward from Elder Tarn.'
+      classId: client.character.classId, spriteColor: '#e3b7ff', icon: 'A', desc: 'A wardstone relic earned by restoring Hearthvale’s seal.'
     });
     if (this.addItem(client, reward)) {
       this.event(client, 'loot', { name: reward.name, rarity: reward.rarity });
@@ -2688,7 +2737,7 @@ export class World {
       client.character.gold += 60;
     }
 
-    this.event(client, 'quest', { text: 'Cave Patrol complete! +140 gold, +260 XP, epic reward.' });
+    this.event(client, 'quest', { text: 'Shards of the Dunes complete! The wardstones shine again, and the cold light beneath Mount Veyr fades. +220 gold, +420 XP, epic reward.' });
     this.sfx(client, 'level');
     this.sendCharacter(client);
   }

@@ -73,6 +73,123 @@
     ]
   };
 
+  function drawSkillIcon(ctx, classId, index, x, y, size, active = false, time = 0) {
+    const palette = {
+      swordsman: ['#dceeff', '#8fd0ff', '#eaf4ff', '#d2c2a0'],
+      archer: ['#b9ffcb', '#b9ffcb', '#8ee46d', '#a8e8ff'],
+      mage: ['#9ce7ff', '#d7b8ff', '#ff9c42', '#e7b8ff']
+    };
+    const color = (palette[classId] || palette.swordsman)[index] || '#fff';
+    const scale = size / 32;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(scale, scale);
+    ctx.fillStyle = '#101a2d';
+    ctx.fillRect(0, 0, 32, 32);
+    const glow = ctx.createRadialGradient(16, 14, 2, 16, 16, 24);
+    glow.addColorStop(0, `${color}55`);
+    glow.addColorStop(1, '#101a2d');
+    ctx.fillStyle = glow;
+    ctx.fillRect(2, 2, 28, 28);
+    ctx.strokeStyle = active ? '#fff1a8' : color;
+    ctx.lineWidth = active ? 2 : 1.5;
+    ctx.strokeRect(1, 1, 30, 30);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = 2.4;
+
+    const line = (points) => {
+      ctx.beginPath();
+      ctx.moveTo(points[0][0], points[0][1]);
+      for (let i = 1; i < points.length; i++) ctx.lineTo(points[i][0], points[i][1]);
+      ctx.stroke();
+    };
+    const circle = (cx, cy, r, fill = false) => {
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, TAU);
+      if (fill) ctx.fill(); else ctx.stroke();
+    };
+
+    if (classId === 'swordsman') {
+      if (index === 0) {
+        line([[8, 24], [23, 8]]);
+        line([[7, 18], [14, 25]]);
+        line([[5, 25], [9, 28]]);
+        line([[20, 7], [25, 12]]);
+      } else if (index === 1) {
+        ctx.beginPath();
+        ctx.moveTo(16, 5); ctx.lineTo(26, 9); ctx.lineTo(24, 21);
+        ctx.lineTo(16, 28); ctx.lineTo(8, 21); ctx.lineTo(6, 9);
+        ctx.closePath(); ctx.stroke();
+        line([[16, 10], [16, 23]]);
+        line([[11, 16], [21, 16]]);
+      } else if (index === 2) {
+        ctx.beginPath(); ctx.arc(16, 16, 10, time * 2, time * 2 + 4.7); ctx.stroke();
+        ctx.beginPath(); ctx.arc(16, 16, 5, time * -3, time * -3 + 4.2); ctx.stroke();
+        line([[22, 8], [26, 8], [25, 12]]);
+      } else {
+        line([[5, 23], [10, 18], [13, 23], [18, 15], [21, 21], [27, 12]]);
+        line([[5, 27], [27, 27]]);
+        line([[9, 25], [9, 28]]); line([[16, 25], [16, 28]]); line([[23, 25], [23, 28]]);
+      }
+    } else if (classId === 'archer') {
+      if (index === 0) {
+        line([[7, 11], [23, 11]]); line([[9, 16], [25, 16]]); line([[7, 21], [23, 21]]);
+        line([[20, 8], [24, 11], [20, 14]]);
+        line([[22, 13], [26, 16], [22, 19]]);
+        line([[20, 18], [24, 21], [20, 24]]);
+      } else if (index === 1) {
+        ctx.beginPath(); ctx.arc(15, 17, 9, -2.5, 1.1); ctx.stroke();
+        line([[17, 8], [25, 8], [23, 14]]);
+        line([[7, 22], [13, 25], [19, 24]]);
+      } else if (index === 2) {
+        line([[7, 23], [22, 8]]);
+        line([[18, 8], [23, 8], [23, 13]]);
+        line([[9, 19], [14, 24]]);
+        circle(22, 23, 2, true); circle(26, 19, 1.4, true);
+      } else {
+        line([[9, 7], [9, 24]]); line([[16, 5], [16, 22]]); line([[23, 7], [23, 24]]);
+        line([[6, 20], [9, 24], [12, 20]]);
+        line([[13, 18], [16, 22], [19, 18]]);
+        line([[20, 20], [23, 24], [26, 20]]);
+      }
+    } else if (index === 0) {
+      for (let a = 0; a < 3; a++) {
+        const angle = a * Math.PI / 3;
+        const dx = Math.cos(angle) * 10;
+        const dy = Math.sin(angle) * 10;
+        line([[16 - dx, 16 - dy], [16 + dx, 16 + dy]]);
+        line([[16 + dx, 16 + dy], [16 + dx - Math.cos(angle + 0.65) * 4, 16 + dy - Math.sin(angle + 0.65) * 4]]);
+        line([[16 + dx, 16 + dy], [16 + dx - Math.cos(angle - 0.65) * 4, 16 + dy - Math.sin(angle - 0.65) * 4]]);
+      }
+      circle(16, 16, 2, true);
+    } else if (index === 1) {
+      ctx.beginPath(); ctx.arc(16, 16, 10, 0, TAU); ctx.stroke();
+      ctx.beginPath(); ctx.arc(16, 16, 5, 0, TAU); ctx.stroke();
+      line([[16, 4], [16, 9]]); line([[28, 16], [23, 16]]);
+      line([[16, 28], [16, 23]]); line([[4, 16], [9, 16]]);
+    } else if (index === 2) {
+      line([[7, 24], [21, 10]]);
+      line([[17, 10], [22, 9], [21, 14]]);
+      line([[9, 21], [13, 25]]);
+      circle(23, 22, 2, true); circle(25, 16, 1.3, true); circle(19, 27, 1.2, true);
+    } else {
+      ctx.beginPath(); ctx.moveTo(16, 5); ctx.lineTo(25, 15); ctx.lineTo(16, 27); ctx.lineTo(7, 15); ctx.closePath(); ctx.stroke();
+      line([[16, 5], [16, 27]]); line([[7, 15], [25, 15]]);
+      circle(16, 15, 3, true);
+    }
+
+    if (active) {
+      ctx.globalAlpha = 0.7 + Math.sin(time * 10) * 0.2;
+      ctx.strokeStyle = '#fff1a8';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(3, 3, 26, 26);
+    }
+    ctx.restore();
+  }
+
   function normalizeSkillRanks(ranks) {
     return Array.from({ length: 4 }, (_, i) => clamp(Number(ranks && ranks[i]) || 1, 1, 5));
   }
@@ -141,12 +258,12 @@
 
   // EXPANSION 5: talent tree + class specializations.
   const TALENTS = [
-    { id: 'power', name: 'Power', desc: '+4% base attack per rank.' },
+    { id: 'power', name: 'Power', desc: '+4% attack per rank.' },
     { id: 'haste', name: 'Haste', desc: '-4% skill cooldown per rank.' },
     { id: 'vigor', name: 'Vigor', desc: '+12 max HP per rank.' },
     { id: 'crit', name: 'Critical Eye', desc: '+3% crit chance per rank.' },
-    { id: 'guard', name: 'Guard', desc: '+2 defense and -4% damage taken per rank.' },
-    { id: 'focus', name: 'Focus', desc: '+5 mana and faster mana regeneration per rank.' }
+    { id: 'guard', name: 'Guard', desc: '+2 defense, -4% damage taken.' },
+    { id: 'focus', name: 'Focus', desc: '+5 mana, faster mana regen.' }
   ];
   const SPECS = {
     swordsman: [
@@ -322,9 +439,13 @@
   }
 
   function shadow(ctx, x, y, rx, ry, alpha = 0.25) {
-    ctx.fillStyle = `rgba(0,0,0,${alpha})`;
+    ctx.fillStyle = `rgba(0,0,0,${alpha * 0.45})`;
     ctx.beginPath();
-    ctx.ellipse(x, y, rx, ry, 0, 0, TAU);
+    ctx.ellipse(x + 2, y + 2, rx + 2, ry + 1, 0, 0, TAU);
+    ctx.fill();
+    ctx.fillStyle = `rgba(0,0,0,${alpha * 0.65})`;
+    ctx.beginPath();
+    ctx.ellipse(x, y, rx * 0.72, ry * 0.72, 0, 0, TAU);
     ctx.fill();
   }
 
@@ -780,6 +901,8 @@
       setRect(g, 3 + variant % 3, 6, 4, 2, highlight);
       setRect(g, 9, 7, 3, 2, ['#1f5c30', '#235d35', '#1c5635', '#285c31'][variant]);
       setPx(g, 11, 5, '#1f5c30');
+      setRect(g, 12, 5, 1, 5, 'rgba(0,0,0,0.16)');
+      setRect(g, 4, 10, 8, 1, 'rgba(0,0,0,0.12)');
     } else if (id === TILE_ID.SAND) {
       setRect(g, 0, 0, 16, 16, '#d7bb76');
       for (let i = 0; i < 10; i++) setPx(g, Math.floor(rng() * 16), Math.floor(rng() * 16), rng() < 0.5 ? '#e3cc8b' : '#c5a866');
@@ -827,6 +950,14 @@
       setRect(g, 5, 6, 2, 4, '#3f9c5e');
       setRect(g, 9, 5, 2, 5, '#3f9c5e');
       setPx(g, 7, 2, '#62c47d');
+    }
+    if ([TILE_ID.SAND, TILE_ID.PATH, TILE_ID.CAVE].includes(id)) {
+      const topEdge = id === TILE_ID.SAND ? 'rgba(255,244,198,0.07)'
+        : id === TILE_ID.PATH ? 'rgba(255,244,210,0.08)' : 'rgba(188,202,234,0.06)';
+      const bottomEdge = id === TILE_ID.SAND ? 'rgba(76,51,19,0.08)'
+        : id === TILE_ID.PATH ? 'rgba(52,41,28,0.1)' : 'rgba(5,7,16,0.09)';
+      setRect(g, 0, 0, 16, 1, topEdge);
+      setRect(g, 0, 15, 16, 1, bottomEdge);
     }
     const c = gridToCanvas(g);
     tileCache.set(cacheKey, c);
@@ -1132,6 +1263,7 @@
       this.size = opts.size || 3;
       this.x2 = Number.isFinite(opts.x2) ? opts.x2 : this.x;
       this.y2 = Number.isFinite(opts.y2) ? opts.y2 : this.y;
+      this.variant = clamp(Math.floor(Number(opts.variant) || 0), 0, 3);
     }
     update(dt) {
       this.life -= dt;
@@ -1151,10 +1283,78 @@
         ctx.stroke();
       } else if (this.kind === 'ring') {
         ctx.strokeStyle = this.color;
-        ctx.lineWidth = 3;
+        ctx.shadowColor = this.color;
+        ctx.shadowBlur = 10 * (1 - t);
+        ctx.lineWidth = 2 + (1 - t) * 1.5;
         ctx.beginPath();
         ctx.arc(this.x, this.y, lerp(this.radius, this.endRadius, t), 0, TAU);
         ctx.stroke();
+        ctx.shadowBlur = 0;
+        ctx.globalAlpha *= 0.55;
+        ctx.setLineDash([5, 6]);
+        ctx.lineDashOffset = -t * 24;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, lerp(this.radius * 0.72, this.endRadius * 0.72, t), 0, TAU);
+        ctx.stroke();
+      } else if (this.kind === 'rune') {
+        const progress = 1 - Math.pow(1 - t, 3);
+        const radius = lerp(this.radius, this.endRadius, progress);
+        const spin = this.angle + t * (this.variant % 2 ? -2.4 : 2.4);
+        ctx.shadowColor = this.color;
+        ctx.shadowBlur = 14 * (1 - t);
+        ctx.strokeStyle = this.color;
+        ctx.lineWidth = 2.5 * (1 - t * 0.45);
+        ctx.beginPath();
+        ctx.ellipse(this.x, this.y, radius, radius * 0.42, 0, 0, TAU);
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+        ctx.globalAlpha *= 0.72;
+        ctx.setLineDash([5, 4]);
+        ctx.lineDashOffset = -t * 28;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.ellipse(this.x, this.y, radius * 0.76, radius * 0.3, 0, spin, spin + TAU * 0.86);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        ctx.rotate(spin);
+        ctx.globalAlpha *= 0.92;
+        ctx.lineWidth = 2;
+        const inner = Math.min(12, radius * 0.28);
+        if (this.variant === 0) {
+          ctx.beginPath();
+          ctx.moveTo(0, -inner); ctx.lineTo(inner * 0.42, 0);
+          ctx.lineTo(0, inner); ctx.lineTo(-inner * 0.42, 0);
+          ctx.closePath(); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(-inner * 0.8, 0); ctx.lineTo(inner * 0.8, 0); ctx.stroke();
+        } else if (this.variant === 1) {
+          ctx.beginPath();
+          ctx.moveTo(0, -inner); ctx.lineTo(inner * 0.75, -inner * 0.55);
+          ctx.lineTo(inner * 0.58, inner * 0.48); ctx.lineTo(0, inner);
+          ctx.lineTo(-inner * 0.58, inner * 0.48); ctx.lineTo(-inner * 0.75, -inner * 0.55);
+          ctx.closePath(); ctx.stroke();
+        } else if (this.variant === 2) {
+          ctx.beginPath(); ctx.arc(0, 0, inner, spin, spin + Math.PI * 1.4); ctx.stroke();
+          ctx.beginPath(); ctx.arc(0, 0, inner * 0.48, spin + Math.PI, spin + Math.PI * 2.5); ctx.stroke();
+        } else {
+          ctx.beginPath();
+          ctx.moveTo(-inner, 0); ctx.lineTo(-inner * 0.45, -inner * 0.55);
+          ctx.lineTo(0, 0); ctx.lineTo(inner * 0.55, -inner * 0.8);
+          ctx.lineTo(inner, 0); ctx.lineTo(inner * 0.4, inner * 0.56);
+          ctx.lineTo(0, 0); ctx.lineTo(-inner * 0.55, inner * 0.8);
+          ctx.closePath(); ctx.stroke();
+        }
+        ctx.restore();
+
+        ctx.fillStyle = this.color;
+        for (let i = 0; i < 6; i++) {
+          const a = spin + i / 6 * TAU;
+          const rx = radius * 0.76 * Math.cos(a);
+          const ry = radius * 0.3 * Math.sin(a);
+          ctx.fillRect(this.x + rx - 1.5, this.y + ry - 1.5, 3, 3);
+        }
       } else if (this.kind === 'warning') {
         ctx.strokeStyle = this.color;
         ctx.lineWidth = 2;
@@ -1312,12 +1512,25 @@
         ctx.fillRect(x - 1, y - 6, 2, 8);
         ctx.fillRect(x - 4, y - 4, 4, 2);
         ctx.fillRect(x + 1, y - 2, 4, 2);
-      } else if (this.kind === 'ore') {
+      } else if (this.kind === 'ore' || (this.kind === 'material' && this.material === 'ore')) {
         ctx.fillStyle = '#51667c';
         ctx.fillRect(x - 5, y - 4, 10, 8);
         ctx.fillStyle = '#9ce7ff';
         ctx.fillRect(x - 3, y - 3, 3, 3);
         ctx.fillRect(x + 1, y - 1, 3, 3);
+      } else if (this.kind === 'essence' || (this.kind === 'material' && this.material === 'essence')) {
+        ctx.fillStyle = `rgba(201,139,255,${0.18 + (Math.sin(this.age * 8) + 1) * 0.1})`;
+        ctx.beginPath();
+        ctx.arc(x, y, 10, 0, TAU);
+        ctx.fill();
+        ctx.fillStyle = '#9f63e6';
+        ctx.beginPath();
+        ctx.moveTo(x, y - 7); ctx.lineTo(x + 5, y - 1);
+        ctx.lineTo(x + 3, y + 6); ctx.lineTo(x - 3, y + 6);
+        ctx.lineTo(x - 5, y - 1); ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = '#f0d7ff';
+        ctx.fillRect(x - 1, y - 4, 2, 5);
       } else if (this.kind === 'potion') {
         ctx.fillStyle = '#e6e9f2';
         ctx.fillRect(x - 2, y - 6, 4, 2);
@@ -1663,6 +1876,7 @@
       game.log(`${this.name} used ${def.name}!`, fxColors[index]);
       this.aim = game.getAimAngle(this);
       const aim = this.aim;
+      game.addSkillRune(this.x, this.y + 2, index, fxColors[index], aim);
       const baseDamage = this.finalStats.attack * power;
 
       if (this.classId === 'swordsman') {
@@ -1671,6 +1885,7 @@
           this.dashTime = 0.20;
           const tx = this.x + Math.cos(aim) * 95;
           const ty = this.y + Math.sin(aim) * 95;
+          game.addSkillRune(tx, ty + 2, index, fxColors[index], aim, true);
           for (const e of game.enemies) {
             if (e.alive && dist(e, { x: tx, y: ty }) < 70) game.damageEnemy(e, baseDamage * 1.7, this, true, 'dash');
           }
@@ -1730,6 +1945,7 @@
           });
         } else { // Arrow Rain
           const target = game.getAimPoint();
+          game.addSkillRune(target.x, target.y, index, fxColors[index], aim, true);
           game.areaDamage(target.x, target.y, 112, baseDamage * 1.5, this, 'arrowRain');
           game.effects.push(new Effect('ring', target.x, target.y, { color: '#a8e8ff', radius: 12, endRadius: 112, life: 0.5 }));
           for (let i = 0; i < 12; i++) {
@@ -1761,19 +1977,23 @@
           }
           const oldX = this.x;
           const oldY = this.y;
+          game.addSkillRune(oldX, oldY + 2, index, fxColors[index], aim, true);
           game.effects.push(new Effect('line', oldX, oldY - 10, {
             color: '#d7b8ff', x2: nx, y2: ny - 10, life: 0.25, size: 4
           }));
           game.effects.push(new Effect('ring', oldX, oldY - 10, { color: '#d7b8ff', radius: 8, endRadius: 40, life: 0.3 }));
           this.x = nx;
           this.y = ny;
+          game.addSkillRune(this.x, this.y + 2, index, fxColors[index], aim, true);
           game.effects.push(new Effect('ring', this.x, this.y - 10, { color: '#e9d6ff', radius: 8, endRadius: 40, life: 0.3 }));
         } else if (index === 2) { // Meteor
           const target = game.getAimPoint();
+          game.addSkillRune(target.x, target.y, index, fxColors[index], aim, true);
           game.pendingMeteors.push({ x: target.x, y: target.y, timer: 0.85, damage: baseDamage * 2.6, owner: this, radius: 108 });
           game.effects.push(new Effect('meteor', target.x, target.y, { color: '#ff8c42', radius: 108, life: 0.85 }));
         } else { // Arcane Burst
           const target = game.getAimPoint();
+          game.addSkillRune(target.x, target.y, index, fxColors[index], aim, true);
           game.areaDamage(target.x, target.y, 105, baseDamage * 1.8, this, 'arcane');
           game.effects.push(new Effect('ring', target.x, target.y, { color: '#e7b8ff', radius: 10, endRadius: 105, life: 0.45 }));
           for (let i = 0; i < 16; i++) {
@@ -1941,41 +2161,64 @@
     ctx.restore();
   }
 
-  // A short glowing aura plus a cast bar makes every skill visibly "cast".
+  // A rotating rune, orbiting sparks and cast bar make every skill visibly cast.
   function drawSkillAura(ctx, actor, game) {
     if (!(actor.skillAnim > 0)) return;
     const duration = actor.skillAnimDuration || 0.55;
     const t = clamp(actor.skillAnim / duration, 0, 1);
     const color = actor.skillAnimColor || '#fff';
+    const pulse = 1 + Math.sin(game.time * 18) * 0.08;
+    const turn = game.time * 4.5;
     ctx.save();
-    ctx.globalAlpha = t * 0.9;
+    ctx.globalAlpha = t * 0.88;
     ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.ellipse(actor.x, actor.y - 3, (17 + (1 - t) * 18) * pulse, 6 + (1 - t) * 5, 0, 0, TAU);
+    ctx.stroke();
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.ellipse(actor.x, actor.y - 3, 26 + (1 - t) * 12, 9 + (1 - t) * 4, 0, turn, turn + Math.PI * 1.55);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
     ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.arc(actor.x, actor.y - 14, 20 + (1 - t) * 24, 0, TAU);
+    ctx.arc(actor.x, actor.y - 14, (18 + (1 - t) * 24) * pulse, 0, TAU);
     ctx.stroke();
-    for (let i = 0; i < 6; i++) {
-      const a = game.time * 5 + i / 6 * TAU;
-      const r = 26 + (1 - t) * 16;
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 8; i++) {
+      const a = turn + i / 8 * TAU;
+      const r = 25 + (1 - t) * 16;
       ctx.fillStyle = color;
-      ctx.fillRect(actor.x + Math.cos(a) * r - 2, actor.y - 14 + Math.sin(a) * r - 2, 4, 4);
+      ctx.fillRect(actor.x + Math.cos(a) * r - 2.5, actor.y - 14 + Math.sin(a) * r - 2.5, 5, 5);
+      if (i % 2 === 0) {
+        ctx.beginPath();
+        ctx.moveTo(actor.x + Math.cos(a) * (r - 5), actor.y - 14 + Math.sin(a) * (r - 5));
+        ctx.lineTo(actor.x + Math.cos(a) * (r + 4), actor.y - 14 + Math.sin(a) * (r + 4));
+        ctx.stroke();
+      }
     }
 
     // Cast name and progress sit just above the name tag without covering it.
     if (actor.skillAnimName) {
-      const bx = actor.x - 32;
-      const by = actor.y - 86;
+      const bx = actor.x - 38;
+      const by = actor.y - 88;
       ctx.globalAlpha = 1;
       ctx.fillStyle = 'rgba(5,8,16,0.82)';
-      ctx.fillRect(bx, by, 64, 14);
+      ctx.fillRect(bx, by, 76, 16);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(bx + 0.5, by + 0.5, 75, 15);
       ctx.fillStyle = '#0b1020';
-      ctx.fillRect(bx + 5, by + 11, 54, 4);
+      ctx.fillRect(bx + 5, by + 12, 66, 3);
       ctx.fillStyle = color;
-      ctx.fillRect(bx + 6, by + 12, Math.max(1, Math.round(52 * (1 - t))), 2);
+      ctx.fillRect(bx + 6, by + 13, Math.max(1, Math.round(64 * (1 - t))), 1);
       ctx.font = 'bold 8px monospace';
       ctx.textAlign = 'center';
       ctx.fillStyle = '#f4f8ff';
-      ctx.fillText(actor.skillAnimName, actor.x, by + 9);
+      ctx.fillText(actor.skillAnimName, actor.x, by + 10);
       ctx.textAlign = 'left';
     }
     ctx.restore();
@@ -2567,8 +2810,46 @@
     return randomFreePoint(zone, zoneId);
   }
 
+  const QUEST_CHAPTERS = [
+    {
+      title: 'The Waking Forest',
+      story: 'The broken seal has poisoned the forest paths. Slimes swarm the old wardstones, while glowing herbs may hold the village wards together.',
+      objective: 'Defeat 10 slimes and gather 5 herbs in the forest.',
+      rewards: '100 gold + 180 XP; unlocks Echoes Below.'
+    },
+    {
+      title: 'Echoes Below',
+      story: 'The herbs reveal a map beneath Mount Veyr. Goblins are digging toward a buried gate and stealing the ore needed to repair its wardstone.',
+      objective: 'Defeat 8 goblins and gather 4 ore in the cave.',
+      rewards: '140 gold + 260 XP; unlocks Shards of the Dunes.'
+    },
+    {
+      title: 'Shards of the Dunes',
+      story: 'The repaired ward answers with a vision: desert scouts carry the seal’s missing essence toward the mountain. Their trail points to the source of the cold light.',
+      objective: 'Defeat 8 scouts and gather 3 essence in the desert.',
+      rewards: '220 gold + 420 XP + an epic wardstone relic.'
+    }
+  ];
+
+  function questChapter(stage) {
+    return QUEST_CHAPTERS[clamp(Math.floor(Number(stage) || 1), 1, QUEST_CHAPTERS.length) - 1];
+  }
+
   function freshQuest() {
-    return { stage: 1, active: false, kills: 0, herbs: 0, goblins: 0, ore: 0, complete: false, claimed: false };
+    return { stage: 1, active: false, kills: 0, herbs: 0, goblins: 0, ore: 0, scouts: 0, essence: 0, complete: false, claimed: false };
+  }
+
+  function normalizeQuestProgress(savedQuest) {
+    const quest = Object.assign(freshQuest(), savedQuest || {});
+    if (!Object.hasOwn(savedQuest || {}, 'stage') && quest.claimed) {
+      Object.assign(quest, { stage: 2, active: false, kills: 0, herbs: 0, goblins: 0, ore: 0, scouts: 0, essence: 0, complete: false, claimed: false });
+    } else if (quest.stage === 2 && quest.claimed) {
+      Object.assign(quest, { stage: 3, active: false, scouts: 0, essence: 0, complete: false, claimed: false });
+    }
+    quest.stage = clamp(Math.floor(Number(quest.stage) || 1), 1, QUEST_CHAPTERS.length);
+    quest.scouts = Math.max(0, Number(quest.scouts) || 0);
+    quest.essence = Math.max(0, Number(quest.essence) || 0);
+    return quest;
   }
 
   // ============================================================
@@ -2776,7 +3057,11 @@
   class Game {
     constructor(canvas) {
       this.canvas = canvas;
+      this.pixelRatio = clamp(window.devicePixelRatio || 1, 1, 2);
+      canvas.width = Math.round(VIEW_W * this.pixelRatio);
+      canvas.height = Math.round(VIEW_H * this.pixelRatio);
       this.ctx = canvas.getContext('2d');
+      this.ctx.setTransform(this.pixelRatio, 0, 0, this.pixelRatio, 0, 0);
       this.ctx.imageSmoothingEnabled = false;
 
       this.state = 'intro';
@@ -2837,6 +3122,7 @@
 
       this.chatMessages = [];
       this.chatOpen = false;
+      this.chatMinimized = false;
       this.chatInput = '';
       this.fakeChatTimer = 7;
 
@@ -2885,8 +3171,8 @@
       };
 
       this.darkCanvas = document.createElement('canvas');
-      this.darkCanvas.width = VIEW_W;
-      this.darkCanvas.height = VIEW_H;
+      this.darkCanvas.width = Math.round(VIEW_W * this.pixelRatio);
+      this.darkCanvas.height = Math.round(VIEW_H * this.pixelRatio);
       this.minimapCache = null;
 
       this.bindEvents();
@@ -3190,7 +3476,12 @@
         case 'q':
           this.useConsumable();
           break;
-        case 'enter': this.clearInput(); this.chatOpen = true; this.chatInput = ''; break;
+        case 'enter':
+          this.clearInput();
+          this.chatMinimized = false;
+          this.chatOpen = true;
+          this.chatInput = '';
+          break;
         case 'escape': this.clearInput(); this.paused = true; this.audio.sfx('ui'); break;
       }
       if (this.panel) this.clearInput();
@@ -3832,10 +4123,7 @@
       p.alive = p.hp > 0;
 
       const savedQuest = char.quest && typeof char.quest === 'object' ? char.quest : {};
-      this.quest = Object.assign(freshQuest(), savedQuest);
-      if (!Object.hasOwn(savedQuest, 'stage') && savedQuest.claimed) {
-        Object.assign(this.quest, { stage: 2, active: false, kills: 0, herbs: 0, goblins: 0, ore: 0, complete: false, claimed: false });
-      }
+      this.quest = normalizeQuestProgress(savedQuest);
       this.bossDefeated = !!char.bossDefeated;
       if (char.id || char.playerId) this.network.playerId = char.id || char.playerId;
       if (Array.isArray(char.auction)) this.networkData.auction = char.auction;
@@ -3967,6 +4255,22 @@
       }
     }
 
+    addSkillRune(x, y, index, color, angle = 0, impact = false) {
+      const count = impact ? 10 : 7;
+      this.effects.push(new Effect('rune', x, y, {
+        color, radius: impact ? 8 : 13, endRadius: impact ? 58 : 44,
+        life: impact ? 0.48 : 0.58, variant: index, angle
+      }));
+      for (let i = 0; i < count; i++) {
+        const a = angle + i / count * TAU;
+        const speed = impact ? 105 : 70;
+        this.effects.push(new Effect('particle', x + Math.cos(a) * 7, y + Math.sin(a) * 4, {
+          color, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed - rand(18, 54),
+          life: rand(0.24, 0.42), size: impact ? 3 : 2
+        }));
+      }
+    }
+
     // Server fx events keep skill animations identical for every player.
     playSkillFx(ev) {
       if (!ev) return;
@@ -4060,6 +4364,10 @@
       const sin = Math.sin(aim);
       const tx = Number.isFinite(ev.tx) ? ev.tx : x + cos * 100;
       const ty = Number.isFinite(ev.ty) ? ev.ty : y + sin * 100;
+      this.addSkillRune(x, y + 2, index, color, aim);
+      if (Number.isFinite(ev.tx) && Number.isFinite(ev.ty)) {
+        this.addSkillRune(tx, ty, index, color, aim, true);
+      }
 
       if (classId === 'swordsman') {
         if (index === 0) {
@@ -4349,10 +4657,7 @@
       this.player = player;
       this.pet = new Pet(player.x + 24, player.y + 18);
       const savedQuest = data.quest && typeof data.quest === 'object' ? data.quest : {};
-      this.quest = Object.assign(freshQuest(), savedQuest);
-      if (!Object.hasOwn(savedQuest, 'stage') && savedQuest.claimed) {
-        Object.assign(this.quest, { stage: 2, active: false, kills: 0, herbs: 0, goblins: 0, ore: 0, complete: false, claimed: false });
-      }
+      this.quest = normalizeQuestProgress(savedQuest);
       this.bossDefeated = !!data.bossDefeated;
       this.settings.volume = clamp(typeof data.volume === 'number' ? data.volume : 0.35, 0, 1);
       this.audio.setVolume(this.settings.volume);
@@ -4515,6 +4820,7 @@
       if (source === this.player && this.quest.active) {
         if (this.quest.stage === 1 && this.zoneId === 'forest' && enemy.type === 'slime') this.quest.kills = Math.min(10, this.quest.kills + 1);
         if (this.quest.stage === 2 && this.zoneId === 'cave' && enemy.type === 'goblin') this.quest.goblins = Math.min(8, this.quest.goblins + 1);
+        if (this.quest.stage === 3 && this.zoneId === 'desert' && enemy.type === 'scout') this.quest.scouts = Math.min(8, this.quest.scouts + 1);
         this.checkQuest();
       }
       // Fake players keep their own rewards; orphan loot would fall out of view.
@@ -4526,6 +4832,9 @@
         if (enemy.type === 'slime' && Math.random() < 0.55) this.pickups.push(new Pickup('herb', enemy.x, enemy.y - 6));
         if (enemy.type === 'goblin' && Math.random() < 0.22) this.pickups.push(new Pickup('herb', enemy.x, enemy.y - 6));
         if (enemy.type === 'goblin' && Math.random() < 0.48) this.pickups.push(new Pickup('ore', enemy.x + 4, enemy.y - 6));
+        if (this.quest.active && this.quest.stage === 3 && this.zoneId === 'desert' && Math.random() < 0.65) {
+          this.pickups.push(new Pickup('essence', enemy.x + rand(-4, 4), enemy.y - 6));
+        }
         if (enemy.type !== 'boss' && Math.random() < 0.12) {
           const item = randomMobItem(this.player ? this.player.classId : 'swordsman');
           this.pickups.push(new Pickup('item', enemy.x + rand(-6, 6), enemy.y - 6, 1, item));
@@ -4607,6 +4916,15 @@
         } else {
           this.addFloater(pl.x, pl.y - 46, 'Ore', '#9ce7ff', 10);
         }
+      } else if (p.kind === 'essence') {
+        pl.materials.essence += 1;
+        if (this.quest.active && this.zoneId === 'desert' && this.quest.stage === 3 && this.quest.essence < 3) {
+          this.quest.essence = Math.min(3, this.quest.essence + 1);
+          this.addFloater(pl.x, pl.y - 46, `Essence ${this.quest.essence}/3`, '#d7b8ff', 11);
+          this.checkQuest();
+        } else {
+          this.addFloater(pl.x, pl.y - 46, 'Essence', '#d7b8ff', 10);
+        }
       } else {
         if (!pl.addItem(p.item)) { p.collected = false; return; }
         this.addFloater(pl.x, pl.y - 46, `Found ${p.item.name}`, RARITY[p.item.rarity].color, 11);
@@ -4681,19 +4999,21 @@
         this.panel = 'shop';
         this.audio.sfx('ui');
       } else if (found.obj.type === 'guard') {
-        this.log('Village Guard: The wardstones are dimming. I heard something wake beneath Mount Veyr.', '#9ce7ff');
+        this.log('Village Guard: Three wardstones seal Mount Veyr. One is dark already; the forest road may hold the first clue.', '#9ce7ff');
         this.audio.sfx('ui');
       } else if (found.obj.type === 'healer') {
-        this.log('Healer Liora: The forest herbs glow faintly since the seal cracked. Elder Tarn may need them for the wardstones.', '#a8f0cd');
+        this.log('Healer Liora: The herbs glow when the wardstones weaken. They may restore the first ward—and reveal what lies below.', '#a8f0cd');
         this.audio.sfx('ui');
       } else if (found.obj.type === 'scout') {
-        this.log('Scout Rowan: I saw a cold light flicker below Mount Veyr. The old road leads to the cave.', '#c7e8ff');
+        this.log(this.quest.stage >= 3
+          ? 'Scout Rowan: The Shards of the Dunes scouts carry purple seal-essence. Follow it back to Mount Veyr.'
+          : 'Scout Rowan: I saw a cold light below Mount Veyr. The cave road is only the second part of the trail; it continues into the dunes.', '#c7e8ff');
         this.audio.sfx('ui');
       } else if (found.obj.type === 'blacksmith') {
-        this.log('Blacksmith Borin: The mountain trembles at night. A strong weapon may help you survive the cave.', '#ffc18b');
+        this.log('Blacksmith Borin: Goblins are mining the wardstone ore beneath the mountain. Bring some back and I can mend your gear.', '#ffc18b');
         this.audio.sfx('ui');
       } else if (found.obj.type === 'villager') {
-        this.log('Farmer Pella: Slimes came out of the woods after the seal broke. Please help Elder Tarn.', '#f0d28e');
+        this.log('Farmer Pella: The slimes came when the first ward went dark. Elder Tarn says their trail leads to a much older secret.', '#f0d28e');
         this.audio.sfx('ui');
       } else {
         this.panel = 'quest';
@@ -4752,12 +5072,14 @@
     }
 
     checkQuest() {
-      const ready = this.quest.stage === 2
-        ? this.quest.goblins >= 8 && this.quest.ore >= 4
-        : this.quest.kills >= 10 && this.quest.herbs >= 5;
+      const ready = this.quest.stage === 3
+        ? this.quest.scouts >= 8 && this.quest.essence >= 3
+        : this.quest.stage === 2
+          ? this.quest.goblins >= 8 && this.quest.ore >= 4
+          : this.quest.kills >= 10 && this.quest.herbs >= 5;
       if (this.quest.active && !this.quest.complete && ready) {
         this.quest.complete = true;
-        this.log('Quest complete! Return to Elder Tarn for your reward.', '#ffd75e');
+        this.log(`${questChapter(this.quest.stage).title} complete! Return to Elder Tarn.`, '#ffd75e');
         this.audio.sfx('level');
         this.save();
       }
@@ -4772,24 +5094,35 @@
         return;
       }
       this.quest.active = true;
-      this.log(this.quest.stage === 2
-        ? 'Elder Tarn: The wardstones are failing. Clear 8 goblins and bring 4 ore from the cave.'
-        : 'Elder Tarn: The broken seal has stirred the forest. Defeat 10 slimes and bring 5 herbs for the wards.', '#ffd75e');
+      const chapter = questChapter(this.quest.stage);
+      const opening = this.quest.stage === 1
+        ? 'Elder Tarn: The seal has cracked. The forest wards are our first defense.'
+        : this.quest.stage === 2
+          ? 'Elder Tarn: The herbs revealed a map to a buried gate beneath Mount Veyr.'
+          : 'Elder Tarn: The repaired ward showed us the truth. The desert scouts carry the missing seal-essence.';
+      this.log(`${chapter.title} — ${opening} ${chapter.objective}`, '#ffd75e');
       this.save();
     }
 
     turnInQuest() {
       if (this.network.online) { this.network.send({ type: 'questTurnIn' }); this.panel = null; return; }
       if (!this.quest.complete || this.quest.claimed) return;
-      if (this.quest.stage === 1) {
-        this.quest.stage = 2;
+      if (this.quest.stage < 3) {
+        const completedStage = this.quest.stage;
+        const rewards = completedStage === 1 ? { gold: 100, xp: 180 } : { gold: 140, xp: 260 };
+        this.quest.stage++;
         this.quest.active = false;
         this.quest.complete = false;
         this.quest.kills = 0;
         this.quest.herbs = 0;
-        this.player.gold += 100;
-        this.player.gainXp(180, this);
-        this.log('Forest Cleanup complete! +100 gold, +180 XP. Cave Patrol unlocked.', '#ffd75e');
+        this.quest.goblins = 0;
+        this.quest.ore = 0;
+        this.quest.scouts = 0;
+        this.quest.essence = 0;
+        this.player.gold += rewards.gold;
+        this.player.gainXp(rewards.xp, this);
+        const nextChapter = questChapter(this.quest.stage);
+        this.log(`${questChapter(completedStage).title} complete! +${rewards.gold} gold, +${rewards.xp} XP. ${nextChapter.title} unlocked.`, '#ffd75e');
         this.audio.sfx('level');
         this.panel = null;
         this.save();
@@ -4797,13 +5130,13 @@
       }
       this.quest.claimed = true;
       this.quest.active = false;
-      this.player.gold += 140;
-      this.player.gainXp(260, this);
       const reward = makeItem('Elder Amulet', 'armor', 'epic', { hp: 30, defense: 6, mana: 20, manaRegen: 1 }, {
-        classId: this.player.classId, spriteColor: '#e3b7ff', icon: 'A', desc: 'Reward from Elder Tarn.'
+        classId: this.player.classId, spriteColor: '#e3b7ff', icon: 'A', desc: 'A wardstone relic earned by restoring Hearthvale’s seal.'
       });
       if (!this.player.addItem(reward)) this.player.gold += 60;
-      this.log('Cave Patrol complete! +140 gold, +260 XP, epic reward.', '#ffd75e');
+      this.player.gold += 220;
+      this.player.gainXp(420, this);
+      this.log('Shards of the Dunes complete! The wardstones shine again, and the cold light beneath Mount Veyr fades. +220 gold, +420 XP, epic reward.', '#ffd75e');
       this.audio.sfx('level');
       this.panel = null;
       this.save();
@@ -5064,9 +5397,25 @@
         case 'potion':
           this.useConsumable();
           break;
-        case 'chat': this.chatOpen = true; this.chatInput = ''; break;
-        case 'chatZone': this.chatChannel = 'zone'; this.chatOpen = true; break;
-        case 'chatGuild': this.chatChannel = 'guild'; this.chatOpen = true; break;
+        case 'chat':
+          this.chatMinimized = false;
+          this.chatOpen = true;
+          this.chatInput = '';
+          break;
+        case 'chatZone':
+          this.chatMinimized = false;
+          this.chatChannel = 'zone';
+          this.chatOpen = true;
+          break;
+        case 'chatGuild':
+          this.chatMinimized = false;
+          this.chatChannel = 'guild';
+          this.chatOpen = true;
+          break;
+        case 'toggleChat':
+          this.chatMinimized = !this.chatMinimized;
+          if (this.chatMinimized) this.chatOpen = false;
+          break;
         case 'openInventory': this.panel = 'inventory'; break;
         case 'openSkills': this.panel = 'skills'; break;
         case 'openAuction': this.panel = 'auction'; if (this.network.online) this.network.send({ type: 'auctionList' }); break;
@@ -5290,7 +5639,7 @@
     render() {
       const ctx = this.ctx;
       this.syncNativeTextInputOverlay();
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.setTransform(this.pixelRatio, 0, 0, this.pixelRatio, 0, 0);
       ctx.clearRect(0, 0, VIEW_W, VIEW_H);
       this.clickRegions = [];
       this.dropRegions = [];
@@ -5485,32 +5834,53 @@
       const ty = isMeteor ? point.y : this.player.y + Math.sin(angle) * distance;
       const ctx = this.ctx;
       const centerY = isMeteor ? ty : ty - 8;
+      const pulse = 1 + Math.sin(this.time * 8) * 0.1;
       ctx.save();
-      ctx.globalAlpha = 0.82;
+      ctx.globalAlpha = 0.72 + Math.sin(this.time * 8) * 0.12;
       ctx.strokeStyle = color;
-      ctx.lineWidth = 2;
+      ctx.lineWidth = 2.5;
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 12;
       if (isMeteor) {
         ctx.setLineDash([7, 5]);
+        ctx.lineDashOffset = -this.time * 18;
         ctx.beginPath();
         ctx.arc(tx, centerY, 108, 0, TAU);
         ctx.stroke();
         ctx.setLineDash([]);
       } else {
         ctx.setLineDash([6, 5]);
+        ctx.lineDashOffset = -this.time * 18;
         ctx.beginPath();
         ctx.moveTo(this.player.x, this.player.y - 8);
         ctx.lineTo(tx, centerY);
         ctx.stroke();
         ctx.setLineDash([]);
       }
-      const radius = isMeteor ? 13 : isBlink ? 12 : 10;
+
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 0.35;
+      ctx.beginPath();
+      ctx.arc(tx, centerY, (isMeteor ? 22 : 18) * pulse, 0, TAU);
+      ctx.stroke();
+      ctx.globalAlpha = 0.95;
+      const radius = (isMeteor ? 13 : isBlink ? 12 : 10) * pulse;
       ctx.beginPath();
       ctx.arc(tx, centerY, radius, 0, TAU);
-      ctx.moveTo(tx - radius - 5, centerY); ctx.lineTo(tx - radius + 1, centerY);
-      ctx.moveTo(tx + radius - 1, centerY); ctx.lineTo(tx + radius + 5, centerY);
-      ctx.moveTo(tx, centerY - radius - 5); ctx.lineTo(tx, centerY - radius + 1);
-      ctx.moveTo(tx, centerY + radius - 1); ctx.lineTo(tx, centerY + radius + 5);
+      for (let i = 0; i < 4; i++) {
+        const a = this.time * 0.8 + i * Math.PI / 2;
+        const inner = radius + 3;
+        const outer = radius + 9;
+        ctx.moveTo(tx + Math.cos(a) * inner, centerY + Math.sin(a) * inner);
+        ctx.lineTo(tx + Math.cos(a) * outer, centerY + Math.sin(a) * outer);
+      }
       ctx.stroke();
+      if (!isMeteor) {
+        ctx.globalAlpha = 0.5;
+        ctx.beginPath();
+        ctx.arc(this.player.x, this.player.y - 8, 8 + Math.sin(this.time * 10) * 2, 0, TAU);
+        ctx.stroke();
+      }
       ctx.restore();
     }
 
@@ -5567,22 +5937,24 @@
       const night = 1 - dayFactor;
       if (night < 0.04 || !this.player) return;
       const dctx = this.darkCanvas.getContext('2d');
+      dctx.setTransform(this.pixelRatio, 0, 0, this.pixelRatio, 0, 0);
+      dctx.imageSmoothingEnabled = false;
       dctx.clearRect(0, 0, VIEW_W, VIEW_H);
       dctx.globalCompositeOperation = 'source-over';
-      dctx.fillStyle = `rgba(3,6,24,${night * 0.82})`;
+      dctx.fillStyle = `rgba(3,6,24,${night * 0.62})`;
       dctx.fillRect(0, 0, VIEW_W, VIEW_H);
       dctx.globalCompositeOperation = 'destination-out';
       const px = this.player.x - this.camX + (this.shakeX || 0);
       const py = this.player.y - 16 - this.camY + (this.shakeY || 0);
-      const radius = this.player.classId === 'mage' ? 230 : 190;
+      const radius = this.player.classId === 'mage' ? 300 : 250;
       const grad = dctx.createRadialGradient(px, py, 10, px, py, radius);
       grad.addColorStop(0, 'rgba(0,0,0,1)');
-      grad.addColorStop(0.55, 'rgba(0,0,0,0.82)');
+      grad.addColorStop(0.6, 'rgba(0,0,0,0.82)');
       grad.addColorStop(1, 'rgba(0,0,0,0)');
       dctx.fillStyle = grad;
       dctx.fillRect(px - radius, py - radius, radius * 2, radius * 2);
       dctx.globalCompositeOperation = 'source-over';
-      ctx.drawImage(this.darkCanvas, 0, 0);
+      ctx.drawImage(this.darkCanvas, 0, 0, VIEW_W, VIEW_H);
 
       // A small label tells the player what part of the cycle it is.
       ctx.save();
@@ -5693,11 +6065,13 @@
         const x = startX + i * 76;
         const def = skills[i];
         const cd = p.skillCd[i];
+        const selected = this.pendingSkillIndex === i;
         ctx.fillStyle = 'rgba(10,15,28,0.92)';
         ctx.fillRect(x, y, 70, 62);
-        ctx.strokeStyle = cd > 0 ? '#5a6378' : CLASS_DATA[p.classId].color;
-        ctx.lineWidth = 2;
+        ctx.strokeStyle = selected ? '#ffd75e' : cd > 0 ? '#5a6378' : CLASS_DATA[p.classId].color;
+        ctx.lineWidth = selected ? 2.5 : 2;
         ctx.strokeRect(x + 1, y + 1, 68, 60);
+        drawSkillIcon(ctx, p.classId, i, x + 23, y + 3, 24, selected, this.time);
         ctx.font = 'bold 11px monospace';
         ctx.textAlign = 'center';
         ctx.fillStyle = '#fff';
@@ -5705,18 +6079,20 @@
         ctx.fillStyle = '#dbe6ff';
         ctx.font = '9px monospace';
         const words = def.name.split(' ');
-        const labelStartY = words.length === 1 ? y + 30 : y + 24;
-        words.forEach((word, k) => ctx.fillText(word, x + 35, labelStartY + k * 10, 58));
+        const labelStartY = words.length === 1 ? y + 44 : y + 37;
+        words.forEach((word, k) => ctx.fillText(word, x + 35, labelStartY + k * 9, 58));
         ctx.fillStyle = p.mp >= def.cost ? '#8ee6ff' : '#ff9b9b';
-        ctx.fillText(`cost ${def.cost}`, x + 35, y + 52);
+        ctx.fillText(`cost ${def.cost}`, x + 35, y + 58);
         ctx.fillStyle = '#9aa6bd';
         ctx.fillText(`R${p.skillRanks[i]}`, x + 58, y + 14);
         if (cd > 0) {
-          ctx.fillStyle = 'rgba(0,0,0,0.62)';
-          ctx.fillRect(x + 2, y + 2, 66, 58);
+          const cooldownMax = def.cd * (1 - (p.skillRanks[i] - 1) * 0.08) * p.finalStats.cooldownMult;
+          const cooldownHeight = Math.max(0, Math.min(60, cd / cooldownMax * 60));
+          ctx.fillStyle = 'rgba(0,0,0,0.42)';
+          ctx.fillRect(x + 2, y + 2, 66, cooldownHeight);
           ctx.fillStyle = '#fff';
           ctx.font = 'bold 16px monospace';
-          ctx.fillText(cd.toFixed(1), x + 35, y + 37);
+          ctx.fillText(cd.toFixed(1), x + 35, y + 33);
         }
       }
       if (this.pet) {
@@ -5731,19 +6107,21 @@
       const ctx = this.ctx;
       const q = this.quest;
       if (q.claimed || (!q.active && !q.complete)) return;
+      const chapter = questChapter(q.stage);
       ctx.fillStyle = 'rgba(8,12,22,0.84)';
       ctx.fillRect(12, 120, 230, 58);
       ctx.strokeStyle = '#c3a4ff';
       ctx.strokeRect(12.5, 120.5, 229, 57);
-      ctx.font = 'bold 11px monospace';
+      ctx.font = 'bold 10px monospace';
       ctx.textAlign = 'left';
       ctx.fillStyle = '#ffd75e';
-      const title = q.stage === 2 ? 'Cave Patrol' : 'Forest Cleanup';
-      ctx.fillText(q.complete ? 'Quest ready to turn in!' : `Quest: ${title}`, 20, 138);
+      ctx.fillText(q.complete ? `CH ${q.stage}/3 READY: RETURN TO ELDER TARN` : `CH ${q.stage}/3: ${chapter.title.toUpperCase()}`, 20, 138);
       ctx.font = '10px monospace';
       ctx.fillStyle = '#dbe6ff';
-      ctx.fillText(q.stage === 2 ? `Goblins: ${q.goblins || 0}/8` : `Slimes: ${q.kills}/10`, 20, 154);
-      ctx.fillText(q.stage === 2 ? `Ore: ${q.ore || 0}/4` : `Herbs: ${q.herbs}/5`, 120, 154);
+      const firstProgress = q.stage === 3 ? `Scouts: ${q.scouts}/8` : q.stage === 2 ? `Goblins: ${q.goblins}/8` : `Slimes: ${q.kills}/10`;
+      const secondProgress = q.stage === 3 ? `Essence: ${q.essence}/3` : q.stage === 2 ? `Ore: ${q.ore}/4` : `Herbs: ${q.herbs}/5`;
+      ctx.fillText(firstProgress, 20, 154);
+      ctx.fillText(secondProgress, 120, 154);
       ctx.fillStyle = '#9aa6bd';
       ctx.fillText(q.complete ? 'Find Elder Tarn and press F' : 'Complete both objectives', 20, 170);
     }
@@ -5793,28 +6171,44 @@
 
     drawChat() {
       const ctx = this.ctx;
+      if (this.chatMinimized) {
+        const x = 12;
+        const y = this.input.mobile ? 118 : VIEW_H - 38;
+        const w = 88;
+        const h = 26;
+        this.button(x, y, w, h, 'CHAT +', 'toggleChat', { fontSize: 10 });
+        return;
+      }
+
       const w = 350;
       const h = 126;
-      const x = this.input.mobile ? (VIEW_W - w) / 2 : 12;
+      const x = 12;
       const y = this.input.mobile ? 118 : VIEW_H - 138;
       ctx.fillStyle = 'rgba(6,10,20,0.82)';
       ctx.fillRect(x, y, w, h);
       ctx.strokeStyle = '#4b5b78';
       ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+      ctx.fillStyle = 'rgba(20,28,45,0.96)';
+      ctx.fillRect(x + 1, y + 1, w - 2, 20);
+      ctx.fillStyle = '#c9d4e8';
+      ctx.font = 'bold 10px monospace';
+      ctx.textAlign = 'left';
+      ctx.fillText('CHAT', x + 8, y + 14);
+      this.button(x + w - 25, y + 2, 22, 18, '-', 'toggleChat', { fontSize: 12 });
       ctx.save();
       ctx.beginPath();
-      ctx.rect(x + 4, y + 4, w - 8, h - 8);
+      ctx.rect(x + 4, y + 22, w - 8, h - 30);
       ctx.clip();
       ctx.font = '10px monospace';
       ctx.textAlign = 'left';
-      const visible = this.chatMessages.slice(-8);
+      const visible = this.chatMessages.slice(-5);
       let ty = y + h - (this.chatOpen ? 30 : 10);
       for (let i = visible.length - 1; i >= 0; i--) {
         const msg = visible[i];
         ctx.fillStyle = msg.color;
         ctx.fillText(msg.text, x + 8, ty);
         ty -= 13;
-        if (ty < y + 12) break;
+        if (ty < y + 24) break;
       }
       ctx.restore();
       if (this.chatOpen) {
@@ -6088,11 +6482,11 @@
       ctx.font = '12px monospace';
       ctx.fillStyle = '#d8e1f2';
       wrappedText(ctx,
-        'For generations, Hearthvale’s wardens kept an ancient seal beneath Mount Veyr asleep. Last night it cracked. The forest stirred, monsters flooded the old roads, and a cold light appeared in the mountain cave.',
+        'For a thousand years, three wardstones kept the ancient seal beneath Mount Veyr asleep. Last night, one went dark. By dawn, monsters had crossed the forest road and a cold light pulsed beneath the mountain.',
         x + 34, y + 78, w - 68, 18, 4);
       ctx.fillStyle = '#b9c7e6';
       wrappedText(ctx,
-        'Elder Tarn is gathering heroes to restore the village wardstones and follow the trail to its source. Stand on the front line as a Swordsman, strike from afar as an Archer, or master the Mage’s ancient flame. The fate of Hearthvale begins with you.',
+        'Elder Tarn’s three-chapter quest follows the clues from the Waking Forest, into the Echoes Below, and across the Shards of the Dunes. Each trail reveals who broke the seal—and what waits at its heart. Your choices will decide Hearthvale’s fate.',
         x + 34, y + 166, w - 68, 18, 4);
       ctx.textAlign = 'center';
       ctx.font = 'italic 11px monospace';
@@ -6365,16 +6759,17 @@
         ctx.fillRect(bx, by, w - 36, 72);
         ctx.strokeStyle = CLASS_DATA[p.classId].color;
         ctx.strokeRect(bx + 0.5, by + 0.5, w - 37, 71);
+        drawSkillIcon(ctx, p.classId, i, bx + 8, by + 15, 42, false, this.time);
         ctx.font = 'bold 14px monospace';
         ctx.textAlign = 'left';
         ctx.fillStyle = '#fff';
-        ctx.fillText(`${i + 1}. ${def.name}`, bx + 12, by + 22);
+        ctx.fillText(`${i + 1}. ${def.name}`, bx + 60, by + 22);
         ctx.font = '11px monospace';
         ctx.fillStyle = '#9fb0cd';
-        ctx.fillText(`Rank ${p.skillRanks[i]}/5   Cost ${def.cost}   Cooldown ${def.cd.toFixed(1)}s`, bx + 12, by + 39);
+        ctx.fillText(`Rank ${p.skillRanks[i]}/5   Cost ${def.cost}   Cooldown ${def.cd.toFixed(1)}s`, bx + 60, by + 39);
         ctx.fillStyle = '#dbe6ff';
         ctx.font = '10px monospace';
-        wrappedText(ctx, def.desc, bx + 12, by + 54, 300, 12, 2);
+        wrappedText(ctx, def.desc, bx + 60, by + 54, 252, 12, 2);
         const canUpgrade = p.skillPoints > 0 && p.skillRanks[i] < 5;
         this.button(bx + 344, by + 20, 118, 32,
           p.skillRanks[i] >= 5 ? 'MAX' : '+ UPGRADE', 'upgrade' + i,
@@ -6425,38 +6820,37 @@
       const y = 88;
       const w = 464;
       const h = 356;
-      const stage = this.quest.stage === 2 ? 2 : 1;
-      const title = stage === 2 ? 'Cave Patrol' : 'Forest Cleanup';
-      panel(ctx, x, y, w, h, `Quest - ${title} (${stage}/2)`);
-      ctx.font = '12px monospace';
+      const chapterIndex = clamp(Math.floor(Number(this.quest.stage) || 1), 1, QUEST_CHAPTERS.length);
+      const chapter = questChapter(chapterIndex);
+      panel(ctx, x, y, w, h, `Quest - Chapter ${chapterIndex}/3: ${chapter.title}`);
+      ctx.font = '11px monospace';
       ctx.textAlign = 'left';
       ctx.fillStyle = '#dbe6ff';
-      const description = stage === 2
-        ? 'The wardstones are failing as the seal beneath Mount Veyr weakens. Clear 8 goblins and bring 4 ore from the cave.'
-        : 'The broken seal has stirred the forest creatures. Help Elder Tarn restore the village wards: defeat 10 slimes and bring 5 herbs.';
-      wrappedText(ctx, description, x + 24, y + 54, w - 48, 18, 4);
-      const firstProgress = stage === 2 ? (this.quest.goblins || 0) / 8 : this.quest.kills / 10;
-      const secondProgress = stage === 2 ? (this.quest.ore || 0) / 4 : this.quest.herbs / 5;
-      drawBar(ctx, x + 24, y + 128, w - 48, 16, firstProgress, '#ff8c42', stage === 2 ? `Goblins: ${this.quest.goblins || 0}/8` : `Slimes: ${this.quest.kills}/10`);
-      drawBar(ctx, x + 24, y + 154, w - 48, 16, secondProgress, '#6ee787', stage === 2 ? `Ore: ${this.quest.ore || 0}/4` : `Herbs: ${this.quest.herbs}/5`);
+      wrappedText(ctx, chapter.story, x + 24, y + 52, w - 48, 16, 3);
+      ctx.font = 'bold 10px monospace';
+      ctx.fillStyle = '#ffd75e';
+      ctx.fillText('CHAPTER OBJECTIVE', x + 24, y + 105);
+      const firstProgress = chapterIndex === 3 ? this.quest.scouts / 8 : chapterIndex === 2 ? this.quest.goblins / 8 : this.quest.kills / 10;
+      const secondProgress = chapterIndex === 3 ? this.quest.essence / 3 : chapterIndex === 2 ? this.quest.ore / 4 : this.quest.herbs / 5;
+      const firstLabel = chapterIndex === 3 ? `Scouts: ${this.quest.scouts}/8` : chapterIndex === 2 ? `Goblins: ${this.quest.goblins}/8` : `Slimes: ${this.quest.kills}/10`;
+      const secondLabel = chapterIndex === 3 ? `Essence: ${this.quest.essence}/3` : chapterIndex === 2 ? `Ore: ${this.quest.ore}/4` : `Herbs: ${this.quest.herbs}/5`;
+      drawBar(ctx, x + 24, y + 116, w - 48, 16, firstProgress, '#ff8c42', firstLabel);
+      drawBar(ctx, x + 24, y + 142, w - 48, 16, secondProgress, '#6ee787', secondLabel);
       ctx.textAlign = 'left';
       ctx.font = '11px monospace';
       ctx.fillStyle = '#9fb0cd';
-      const reward = stage === 1 ? 'Reward: 100 gold + 180 XP; unlocks Cave Patrol.'
-        : 'Reward: 140 gold + 260 XP + an epic armor piece.';
       ctx.fillStyle = '#ffd75e';
       ctx.font = 'bold 10px monospace';
-      wrappedText(ctx, reward, x + 24, y + 190, w - 48, 14, 2);
+      wrappedText(ctx, `Reward: ${chapter.rewards}`, x + 24, y + 182, w - 48, 14, 2);
       ctx.fillStyle = '#9fb0cd';
       ctx.font = '11px monospace';
-      const status = this.quest.claimed ? 'Reward already claimed.'
-        : this.quest.complete ? stage === 1
-          ? 'Objectives complete! Turn in to claim your reward.'
-          : 'Objectives complete! Turn in to claim your reward.'
-          : this.quest.active ? 'Quest in progress. Keep hunting!' : stage === 2
-            ? 'Second request in Elder Tarn quest chain.'
-            : 'First request in Elder Tarn quest chain.';
-      wrappedText(ctx, status, x + 24, y + 218, w - 48, 14, 3);
+      const status = this.quest.claimed ? 'Campaign complete. The three wardstones are safe—for now.'
+        : this.quest.complete ? chapterIndex < QUEST_CHAPTERS.length
+          ? 'Objectives complete! Return to Elder Tarn to reveal the next chapter.'
+          : 'Objectives complete! Return to Elder Tarn to claim your reward.'
+          : this.quest.active ? 'Quest in progress. Follow the trail and report back to Elder Tarn.'
+            : 'Accept this chapter from Elder Tarn to begin.';
+      wrappedText(ctx, status, x + 24, y + 210, w - 48, 14, 3);
       if (this.quest.claimed) {
         this.button(x + 162, y + 294, 140, 32, 'CLOSE', 'closePanel', { color: '#34405c' });
       } else if (this.quest.complete) {
@@ -6773,6 +7167,7 @@
         const tx = x + 20 + (i % 3) * 240;
         const ty = y + 66 + Math.floor(i / 3) * 104;
         const rank = Math.max(0, Math.min(3, Number((p.talents || {})[t.id]) || 0));
+        ctx.textAlign = 'left';
         ctx.fillStyle = 'rgba(18,26,44,0.92)';
         ctx.fillRect(tx, ty, 226, 92);
         ctx.strokeStyle = rank > 0 ? '#c9a6ff' : '#58668a';
@@ -6782,15 +7177,16 @@
         ctx.fillText(t.name, tx + 10, ty + 22);
         ctx.font = '10px monospace';
         ctx.fillStyle = '#9fb0cd';
-        wrappedText(ctx, t.desc, tx + 10, ty + 40, 150, 12, 3);
+        wrappedText(ctx, t.desc, tx + 10, ty + 40, 206, 12, 1);
         ctx.fillStyle = '#ffd75e';
         ctx.fillText(`${rank}/3`, tx + 10, ty + 78);
         const canRank = p.skillPoints > 0 && rank < 3;
-        this.button(tx + 150, ty + 56, 66, 26, rank >= 3 ? 'MAX' : '+ RANK', 'talent:' + t.id,
+        this.button(tx + 150, ty + 60, 66, 26, rank >= 3 ? 'MAX' : '+ RANK', 'talent:' + t.id,
           { color: canRank ? '#5b4b8c' : '#4a3340', fontSize: 9 });
       });
 
       const specList = SPECS[p.classId] || [];
+      ctx.textAlign = 'left';
       ctx.fillStyle = '#dbe6ff';
       ctx.font = 'bold 11px monospace';
       ctx.fillText('Class specialization (unlocks at level 10)', x + 20, y + 290);
@@ -6802,18 +7198,20 @@
         ctx.strokeStyle = p.spec === s.id ? '#ffd75e' : '#58668a';
         ctx.lineWidth = p.spec === s.id ? 2 : 1;
         ctx.strokeRect(sx + 0.5, sy + 0.5, 343, 73);
+        ctx.textAlign = 'left';
         ctx.font = 'bold 12px monospace';
         ctx.fillStyle = p.spec === s.id ? '#ffd75e' : '#fff';
         ctx.fillText(s.id, sx + 10, sy + 24);
         ctx.font = '10px monospace';
         ctx.fillStyle = '#9fb0cd';
-        ctx.fillText(s.desc, sx + 10, sy + 44);
+        wrappedText(ctx, s.desc, sx + 10, sy + 44, 220, 12, 2);
         if (p.spec !== s.id) {
           this.button(sx + 244, sy + 40, 90, 26, p.level < 10 ? 'LVL 10' : 'CHOOSE', 'spec:' + s.id,
             { color: p.level >= 10 && !p.spec ? '#3f7d55' : '#4a3340', fontSize: 9 });
         }
       });
 
+      ctx.textAlign = 'left';
       ctx.fillStyle = '#9aa6bd';
       ctx.font = '10px monospace';
       ctx.fillText('Skill ranks can also be upgraded here. K opens the detailed skill panel.', x + 20, y + 398);
