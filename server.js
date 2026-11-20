@@ -174,8 +174,8 @@ const saveTimer = setInterval(() => {
   world.saveAll();
 }, 10000);
 
-server.listen(PORT, () => {
-  console.log(`Pixel Realm server listening on http://localhost:${PORT} (WebSocket: /ws)`);
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`Pixel Realm server listening on port ${PORT} (WebSocket: /ws)`);
 });
 
 function shutdown() {

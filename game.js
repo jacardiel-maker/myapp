@@ -2682,7 +2682,8 @@
       this.pickups = new Map();
       this.stateQueue = [];
       const params = new URLSearchParams(location.search);
-      this.url = params.get('ws') || `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.hostname || 'localhost'}:3000/ws`;
+      const wsHost = location.host || `${location.hostname || 'localhost'}:3000`;
+      this.url = params.get('ws') || `${location.protocol === 'https:' ? 'wss' : 'ws'}://${wsHost}/ws`;
     }
     connect() {
       if (this.socket && (this.connected || this.connecting)) return;
