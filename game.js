@@ -748,12 +748,17 @@
       setRect(g, 0, 0, 16, 16, '#4f9d54');
       const foliage = ['#2f7a3c', '#347f43', '#267542', '#3b7940'][variant];
       const highlight = ['#62b95e', '#7acb68', '#55b66b', '#90c45a'][variant];
-      setRect(g, 7, 9, 3, 5, '#6b4a2c');
-      setRect(g, 4, 2, 9, 7, foliage);
+      setRect(g, 2, 13, 12, 2, 'rgba(23,56,35,0.55)');
+      setRect(g, 6, 8, 4, 7, '#6b4a2c');
+      setRect(g, 7, 9, 1, 5, '#8b6240');
+      setRect(g, 5, 2, 7, 3, foliage);
       setRect(g, 3, 4, 11, 4, foliage);
-      setRect(g, 5, 3, 5, 2, highlight);
-      setRect(g, 4 + variant % 3, 6, 3, 2, highlight);
-      setPx(g, 11, 6, '#1f5c30');
+      setRect(g, 2, 6, 12, 4, foliage);
+      setRect(g, 4, 9, 8, 2, foliage);
+      setRect(g, 4, 3, 5, 2, highlight);
+      setRect(g, 3 + variant % 3, 6, 4, 2, highlight);
+      setRect(g, 9, 7, 3, 2, ['#1f5c30', '#235d35', '#1c5635', '#285c31'][variant]);
+      setPx(g, 11, 5, '#1f5c30');
     } else if (id === TILE_ID.SAND) {
       setRect(g, 0, 0, 16, 16, '#d7bb76');
       for (let i = 0; i < 10; i++) setPx(g, Math.floor(rng() * 16), Math.floor(rng() * 16), rng() < 0.5 ? '#e3cc8b' : '#c5a866');
@@ -2810,6 +2815,7 @@
         userSelect: 'text', WebkitUserSelect: 'text'
       });
       document.body.appendChild(this.nativeTextInput);
+      if (navigator.virtualKeyboard) navigator.virtualKeyboard.overlaysContent = true;
       this.nativeTextInput.addEventListener('input', () => this.onNativeTextInput());
       this.nativeTextInput.addEventListener('blur', () => {
         if (!this.nativeInputKeepFocus) return;
@@ -2844,18 +2850,24 @@
       ));
     }
 
-    // Ask the browser to lock landscape when possible. Most mobile browsers
-    // only allow this from a user gesture, so it is called on every first tap.
+    isPortraitMobile() {
+      return !!(window.matchMedia && window.matchMedia('(orientation: portrait) and (pointer: coarse)').matches);
+    }
+
+    // Fullscreen and orientation locks require a user gesture in most browsers.
     goFullscreen() {
       if (!this.input.mobile || document.fullscreenElement) return;
       const el = document.documentElement;
       const request = el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen;
-      if (!request) return;
+      if (!request) { this.requestLandscape(); return; }
       try {
+        this.requestLandscape();
         const result = request.call(el);
-        if (result && typeof result.catch === 'function') result.catch(() => {});
+        if (result && typeof result.then === 'function') {
+          result.then(() => this.requestLandscape()).catch(() => this.requestLandscape());
+        } else this.requestLandscape();
       } catch (err) {
-        // Ignored: the canvas still fills the visible viewport via CSS.
+        this.requestLandscape();
       }
     }
 
@@ -2869,7 +2881,7 @@
         const result = orientation.lock('landscape');
         if (result && typeof result.catch === 'function') result.catch(() => {});
       } catch (err) {
-        // Ignored: the CSS rotate prompt still blocks portrait play.
+        // CSS rotates the landscape canvas on browsers that reject this lock.
       }
     }
 
@@ -2902,13 +2914,21 @@
       }
 
       const rect = this.canvas.getBoundingClientRect();
-      const sx = rect.width / VIEW_W;
-      const sy = rect.height / VIEW_H;
+      const rotated = this.isPortraitMobile();
+      const sx = rotated ? rect.height / VIEW_W : rect.width / VIEW_W;
+      const sy = rotated ? rect.width / VIEW_H : rect.height / VIEW_H;
       input.style.display = 'block';
-      input.style.left = `${rect.left + (config.x + 6) * sx}px`;
-      input.style.top = `${rect.top + 3 * sy + config.y * sy}px`;
-      input.style.width = `${Math.max(24, (config.w - 12) * sx)}px`;
-      input.style.height = `${Math.max(20, (config.h - 6) * sy)}px`;
+      if (rotated) {
+        input.style.left = `${rect.left + rect.width - (config.y + config.h - 3) * sy}px`;
+        input.style.top = `${rect.top + (config.x + 6) * sx}px`;
+        input.style.width = `${Math.max(24, (config.h - 6) * sy)}px`;
+        input.style.height = `${Math.max(20, (config.w - 12) * sx)}px`;
+      } else {
+        input.style.left = `${rect.left + (config.x + 6) * sx}px`;
+        input.style.top = `${rect.top + 3 * sy + config.y * sy}px`;
+        input.style.width = `${Math.max(24, (config.w - 12) * sx)}px`;
+        input.style.height = `${Math.max(20, (config.h - 6) * sy)}px`;
+      }
       if (input.type !== config.type) input.type = config.type;
       if (input.maxLength !== config.maxLength) input.maxLength = config.maxLength;
       if (input.inputMode !== 'text') input.inputMode = 'text';
@@ -2941,9 +2961,16 @@
       window.addEventListener('keyup', e => this.onKeyUp(e));
       window.addEventListener('blur', () => this.clearInput());
       window.addEventListener('pointerdown', () => {
-        this.requestLandscape();
         this.goFullscreen();
-      }, { passive: true });
+      }, { passive: true, capture: true });
+      document.addEventListener('fullscreenchange', () => {
+        if (this.input.mobile && document.fullscreenElement) this.requestLandscape();
+        this.syncNativeTextInputOverlay();
+      });
+      document.addEventListener('webkitfullscreenchange', () => {
+        if (this.input.mobile) this.requestLandscape();
+        this.syncNativeTextInputOverlay();
+      });
       this.canvas.addEventListener('pointerdown', e => this.onPointerDown(e));
       window.addEventListener('pointermove', e => this.onPointerMove(e));
       window.addEventListener('pointerup', e => this.onPointerUp(e));
@@ -2956,6 +2983,12 @@
 
     pointerPos(e) {
       const rect = this.canvas.getBoundingClientRect();
+      if (this.isPortraitMobile()) {
+        return {
+          x: (e.clientY - rect.top) * VIEW_W / rect.height,
+          y: (rect.left + rect.width - e.clientX) * VIEW_H / rect.width
+        };
+      }
       return {
         x: (e.clientX - rect.left) * VIEW_W / rect.width,
         y: (e.clientY - rect.top) * VIEW_H / rect.height

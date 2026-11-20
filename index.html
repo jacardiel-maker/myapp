@@ -2,24 +2,15 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=overlays-content">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
-  <meta name="screen-orientation" content="landscape">
-  <meta name="x5-orientation" content="landscape">
   <title>Pixel Realm - Browser MMORPG</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <!-- One visible canvas. All screens (select, game, menus, chat) are drawn here. -->
   <canvas id="game" width="960" height="540" aria-label="Pixel Realm game"></canvas>
-
-  <!-- Mobile portrait blocker. The game runs in landscape only. -->
-  <div id="rotate-device" role="status" aria-live="polite">
-    <div class="rotate-phone" aria-hidden="true"></div>
-    <strong>ROTATE YOUR DEVICE</strong>
-    <span>Pixel Realm must be played in landscape.</span>
-  </div>
 
   <script src="game.js" defer></script>
 </body>
