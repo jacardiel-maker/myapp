@@ -77,6 +77,27 @@
     epic: { color: '#ca83ff', mult: 1.8, label: 'Epic' }
   };
 
+  const CLASS_STAT_LABELS = {
+    hp: 'Max HP', attack: 'Attack', defense: 'Defense', speed: 'Speed',
+    range: 'Range', mana: 'Max mana', manaRegen: 'Mana regen', crit: 'Critical chance'
+  };
+
+  function itemStatsText(item) {
+    if (!item || !item.stats) return item && item.heal ? `Heals ${item.heal} HP` : 'No attribute bonus';
+    const entries = Object.entries(CLASS_STAT_LABELS).filter(([key]) => Number(item.stats[key]) !== 0);
+    if (!entries.length) return item.heal ? `Heals ${item.heal} HP` : (item.desc || 'No attribute bonus');
+    return entries.map(([key, label]) => {
+      const value = Number(item.stats[key]) || 0;
+      if (key === 'crit') return `Crit +${Math.round(value * 100)}%`;
+      return `${label} +${value}`;
+    }).join('  ');
+  }
+
+  function itemCanEquip(item, classId) {
+    return !!item && (item.slot === 'weapon' || item.slot === 'armor') &&
+      (!item.classId || item.classId === classId);
+  }
+
   // EXPANSION 5: talent tree + class specializations.
   const TALENTS = [
     { id: 'power', name: 'Power', desc: '+4% base attack per rank.' },
@@ -720,19 +741,19 @@
   const ROLE_ITEM_DEFS = {
     swordsman: {
       name: 'Dawnfang Blade', art: ROLE_ITEM_ART.swordsman, icon: 'S',
-      stats: { attack: 18, hp: 12, speed: 4 },
+      stats: { attack: 18, hp: 12, speed: 4, crit: 0.02 },
       effect: 'flame', spriteColor: '#eef5ff', color: '#ffd27a', price: 420,
       desc: 'Swordsman relic: a sunlit blade that burns on impact.'
     },
     archer: {
       name: 'Windsong Bow', art: ROLE_ITEM_ART.archer, icon: 'B',
-      stats: { attack: 14, speed: 12, range: 28 },
+      stats: { attack: 14, speed: 12, range: 28, crit: 0.04 },
       effect: 'frost', spriteColor: '#9ce7c4', color: '#8ee6ff', price: 420,
       desc: 'Archer relic: a living bow that hums with the north wind.'
     },
     mage: {
       name: 'Astral Flame Staff', art: ROLE_ITEM_ART.mage, icon: 'T',
-      stats: { attack: 16, mana: 24, range: 18 },
+      stats: { attack: 16, mana: 24, range: 18, manaRegen: 1.5 },
       effect: 'void', spriteColor: '#c9a6ff', color: '#ffb15c', price: 420,
       desc: 'Mage relic: focuses starlight into an eternal flame.'
     }
@@ -741,6 +762,7 @@
   function roleItem(classId) {
     const def = ROLE_ITEM_DEFS[classId] || ROLE_ITEM_DEFS.swordsman;
     return makeItem(def.name, 'weapon', 'epic', def.stats, {
+      classId,
       art: def.art,
       icon: def.icon,
       spriteColor: def.spriteColor,
@@ -757,7 +779,8 @@
       name,
       slot,
       rarity,
-      stats: Object.assign({ hp: 0, attack: 0, defense: 0, speed: 0, range: 0, mana: 0 }, stats),
+      stats: Object.assign({ hp: 0, attack: 0, defense: 0, speed: 0, range: 0, mana: 0, crit: 0, manaRegen: 0 }, stats),
+      classId: extra.classId || null,
       // color/effect/enchant are used by the unique equipment sprite effects.
       spriteColor: extra.spriteColor || extra.color || RARITY[rarity].color,
       color: extra.color || null,
@@ -773,12 +796,12 @@
 
   function starterItems(classId) {
     const weapon = classId === 'swordsman'
-      ? makeItem('Iron Sword', 'weapon', 'common', { attack: 5 }, { art: 'sword', spriteColor: '#d4e0ec', desc: 'A trusty blade.' })
+      ? makeItem('Iron Sword', 'weapon', 'common', { attack: 5 }, { classId, art: 'sword', spriteColor: '#d4e0ec', desc: 'Swordsman weapon. A trusty blade.' })
       : classId === 'archer'
-        ? makeItem('Short Bow', 'weapon', 'common', { attack: 4 }, { art: 'bow', spriteColor: '#9c6a3d', desc: 'Light and quick.' })
-        : makeItem('Oak Staff', 'weapon', 'common', { attack: 6 }, { art: 'staff', spriteColor: '#b37b45', desc: 'Channels fire magic.' });
+        ? makeItem('Short Bow', 'weapon', 'common', { attack: 4 }, { classId, art: 'bow', spriteColor: '#9c6a3d', desc: 'Archer weapon. Light and quick.' })
+        : makeItem('Oak Staff', 'weapon', 'common', { attack: 6 }, { classId, art: 'staff', spriteColor: '#b37b45', desc: 'Mage weapon. Channels fire magic.' });
     const armorColor = classId === 'mage' ? '#8b63c8' : classId === 'archer' ? '#5c9b66' : '#7896c4';
-    const armor = makeItem('Traveler Gear', 'armor', 'common', { hp: 10, defense: 2 }, { art: 'armor', spriteColor: armorColor, desc: 'Basic adventurer clothes.' });
+    const armor = makeItem('Traveler Gear', 'armor', 'common', { hp: 10, defense: 2 }, { classId, art: 'armor', spriteColor: armorColor, desc: `Basic ${CLASS_DATA[classId].name} armor.` });
     return {
       equipment: { weapon, armor },
       inventory: [
@@ -788,7 +811,7 @@
     };
   }
 
-  function randomShopItem(index) {
+  function randomShopItem(index, classId = 'swordsman') {
     const rarities = ['common', 'rare', 'rare', 'epic'];
     const rarity = rarities[index % rarities.length];
     const mult = RARITY[rarity].mult;
@@ -799,54 +822,60 @@
     }
     const kind = index % 2 === 0 ? 'weapon' : 'armor';
     if (kind === 'weapon') {
-      return makeItem(
-        rarity === 'epic' ? 'Runed Edge' : rarity === 'rare' ? 'Steelervoir' : 'Practice Weapon',
-        'weapon', rarity,
-        { attack: Math.round(6 * mult) },
-        {
-          art: 'sword',
-          spriteColor: rarity === 'epic' ? '#d38bff' : rarity === 'rare' ? '#7fc4ff' : '#c0c6d2',
-          desc: 'Increases attack power.'
-        }
-      );
+      const weapon = classId === 'archer'
+        ? { name: 'Windrunner Bow', art: 'bow', stats: { attack: Math.round(5 * mult), speed: Math.round(4 * mult), crit: 0.01 * mult }, color: '#7fc4ff' }
+        : classId === 'mage'
+          ? { name: 'Starweave Staff', art: 'staff', stats: { attack: Math.round(6 * mult), mana: Math.round(10 * mult), manaRegen: Math.round(0.5 * mult * 10) / 10 }, color: '#c28bff' }
+          : { name: 'Runed Edge', art: 'sword', stats: { attack: Math.round(6 * mult), hp: Math.round(4 * mult), defense: Math.max(1, Math.round(mult)) }, color: '#d38bff' };
+      return makeItem(weapon.name, 'weapon', rarity, weapon.stats, {
+        classId, art: weapon.art, spriteColor: weapon.color,
+        desc: `${CLASS_DATA[classId].name} weapon with role-specific attributes.`
+      });
     }
+    const armor = classId === 'archer'
+      ? { name: 'Windwoven Vest', stats: { hp: Math.round(12 * mult), defense: Math.round(2 * mult), speed: Math.round(2 * mult) } }
+      : classId === 'mage'
+        ? { name: 'Aether Robe', stats: { hp: Math.round(10 * mult), defense: Math.max(1, Math.round(mult)), mana: Math.round(8 * mult), manaRegen: Math.round(0.4 * mult * 10) / 10 } }
+        : { name: 'Dragonhide', stats: { hp: Math.round(16 * mult), defense: Math.round(3 * mult) } };
     return makeItem(
-      rarity === 'epic' ? 'Dragonhide' : rarity === 'rare' ? 'Knight Mail' : 'Padded Vest',
-      'armor', rarity,
-      { hp: Math.round(16 * mult), defense: Math.round(3 * mult) },
+      armor.name,
+      'armor', rarity, armor.stats,
       {
+        classId,
         art: 'armor',
         spriteColor: rarity === 'epic' ? '#b465d9' : rarity === 'rare' ? '#5f86c9' : '#8a8f9c',
-        desc: 'Increases HP and defense.'
+        desc: `${CLASS_DATA[classId].name} armor with role-specific attributes.`
       }
     );
   }
 
-  function makeShopStock() {
+  function makeShopStock(classId = 'swordsman') {
     // Three familiar supplies plus one signature relic for each role.
     return [
-      randomShopItem(0),
-      randomShopItem(1),
-      randomShopItem(2),
+      randomShopItem(0, classId),
+      randomShopItem(1, classId),
+      randomShopItem(2, classId),
       roleItem('swordsman'),
       roleItem('archer'),
       roleItem('mage')
     ];
   }
 
-  function randomMobItem() {
-    const roleIds = Object.keys(ROLE_ITEM_DEFS);
-    if (Math.random() < 0.22) return roleItem(roleIds[Math.floor(Math.random() * roleIds.length)]);
-    return randomShopItem(randInt(0, 5));
+  function randomMobItem(classId = 'swordsman') {
+    if (Math.random() < 0.22) return roleItem(classId);
+    return randomShopItem(randInt(0, 5), classId);
   }
 
-  function normalizeItem(raw) {
+  function normalizeItem(raw, defaultClassId = null) {
     if (!raw || typeof raw !== 'object') return null;
     const slot = ['weapon', 'armor', 'consumable'].includes(raw.slot) ? raw.slot : 'consumable';
     const rarity = RARITY[raw.rarity] ? raw.rarity : 'common';
+    const roleClassId = Object.entries(ROLE_ITEM_DEFS)
+      .find(([id, def]) => raw.art === ROLE_ITEM_ART[id] || raw.name === def.name)?.[0];
     return makeItem(String(raw.name || 'Item'), slot, rarity, raw.stats || {}, {
       // Keep the server UID: equip/enchant/mail/auction actions all refer to it.
       uid: raw.uid,
+      classId: raw.classId || roleClassId || (slot === 'weapon' || slot === 'armor' ? defaultClassId : null),
       spriteColor: raw.spriteColor,
       color: raw.color,
       effect: raw.effect,
@@ -1351,10 +1380,10 @@
       // These modifiers mirror the authoritative server formulas so offline and
       // online characters feel the same.
       const specMods = {
-        Guardian: { hp: 35, defense: 5 },
+        Guardian: { hp: 35, defense: 5, taken: 0.9 },
         Berserker: { attack: 9, defense: -2 },
         Ranger: { speed: 16, range: 35 },
-        Assassin: { attack: 6, crit: 0.08 },
+        Assassin: { attack: 6, crit: 0.08, cd: 0.9 },
         Pyromancer: { attack: 8, mana: 20 },
         Cryomancer: { mana: 40, hp: 12 }
       }[this.spec] || {};
@@ -1364,9 +1393,13 @@
         attack: base.attack + lv * 3 + (weapon.attack || 0) + (armor.attack || 0) + (specMods.attack || 0) + Math.round(base.attack * 0.04 * (t.power || 0)),
         speed: clamp(base.speed + lv * 1.2 + (weapon.speed || 0) + (armor.speed || 0) + (specMods.speed || 0), 60, 210),
         range: base.range + (weapon.range || 0) + (specMods.range || 0),
-        defense: base.defense + lv * 0.6 + (weapon.defense || 0) + (armor.defense || 0) + (specMods.defense || 0) + (t.guard || 0) * 2
+        defense: Math.max(0, base.defense + lv * 0.6 + (weapon.defense || 0) + (armor.defense || 0) + (specMods.defense || 0) + (t.guard || 0) * 2),
+        crit: 0.10 + (weapon.crit || 0) + (armor.crit || 0) + (t.crit || 0) * 0.03 + (specMods.crit || 0),
+        manaRegen: base.manaRegen + lv * 0.3 + (weapon.manaRegen || 0) + (armor.manaRegen || 0) + (t.focus || 0) * 0.5,
+        cooldownMult: (1 - (t.haste || 0) * 0.04) * (specMods.cd || 1),
+        damageTakenMult: (1 - (t.guard || 0) * 0.04) * (specMods.taken || 1)
       };
-      this.critChance = 0.10 + (t.crit || 0) * 0.03 + (specMods.crit || 0);
+      this.critChance = this.finalStats.crit;
       if (clampValues) {
         this.hp = clamp(this.hp, 0, this.maxHp);
         this.mp = clamp(this.mp, 0, this.maxMp);
@@ -1397,7 +1430,7 @@
       }
 
       // STAGE 2: mana / stamina regenerates over time.
-      const regen = CLASS_DATA[this.classId].manaRegen + this.level * 0.3;
+      const regen = this.finalStats.manaRegen;
       this.mp = Math.min(this.maxMp, this.mp + regen * dt);
       if (!game.playerInCombat) this.hp = Math.min(this.maxHp, this.hp + 0.8 * dt);
 
@@ -1500,7 +1533,7 @@
       this.mp -= def.cost;
       const rank = this.skillRanks[index];
       const power = 1 + (rank - 1) * 0.28;
-      this.skillCd[index] = def.cd * (1 - (rank - 1) * 0.08);
+      this.skillCd[index] = def.cd * (1 - (rank - 1) * 0.08) * this.finalStats.cooldownMult;
       game.audio.sfx('skill');
       const fxColors = this.classId === 'swordsman'
         ? ['#dceeff', '#8fd0ff', '#eaf4ff']
@@ -1613,7 +1646,7 @@
 
     takeDamage(amount, game) {
       if (!this.alive || this.invuln > 0) return;
-      let dmg = Math.max(1, Math.round(amount - this.finalStats.defense * 0.5));
+      let dmg = Math.max(1, Math.round(amount * this.finalStats.damageTakenMult - this.finalStats.defense * 0.5));
       if (this.shieldTime > 0) dmg = Math.max(1, Math.round(dmg * 0.2));
       this.hp -= dmg;
       game.playerInCombat = 2.5;
@@ -1676,7 +1709,7 @@
     }
 
     equip(item, slot, game) {
-      if (!item || item.slot !== slot || slot === 'consumable') return false;
+      if (!item || item.slot !== slot || slot === 'consumable' || !itemCanEquip(item, this.classId)) return false;
       const old = this.equipment[slot];
       this.equipment[slot] = item;
       if (old) this.addItem(old);
@@ -2591,7 +2624,7 @@
       this.party = [];
       this.quest = freshQuest();
       this.bossDefeated = false;
-      this.shopStock = makeShopStock();
+      this.shopStock = makeShopStock(this.selectedClass);
 
       this.chatMessages = [];
       this.chatOpen = false;
@@ -2610,6 +2643,7 @@
       this.pointer = { x: 0, y: 0, down: false, inside: false, type: 'mouse', id: null, lastMove: 0 };
       this.joystick = { active: false, id: null, originX: 100, originY: VIEW_H - 100, x: 0, y: 0 };
       this.nativeTextInput = document.createElement('input');
+      this.nativeInputKeepFocus = false;
       this.nativeTextInput.type = 'text';
       this.nativeTextInput.autocomplete = 'off';
       this.nativeTextInput.autocapitalize = 'off';
@@ -2624,6 +2658,16 @@
       });
       document.body.appendChild(this.nativeTextInput);
       this.nativeTextInput.addEventListener('input', () => this.onNativeTextInput());
+      this.nativeTextInput.addEventListener('blur', () => {
+        if (!this.nativeInputKeepFocus) return;
+        // Mobile browsers may blur the hidden keyboard input while resizing the
+        // visual viewport. Restore it only while the same text field is active.
+        window.setTimeout(() => {
+          if (!this.nativeInputKeepFocus || document.visibilityState === 'hidden' ||
+              document.activeElement === this.nativeTextInput || !this.nativeTextInputConfig()) return;
+          this.syncNativeTextInputOverlay(true);
+        }, 120);
+      });
       this.input = {
         keys: {},
         joystick: this.joystick,
@@ -2696,6 +2740,7 @@
       const input = this.nativeTextInput;
       const config = this.nativeTextInputConfig();
       if (!input || !config) {
+        this.nativeInputKeepFocus = false;
         if (input) {
           input.style.display = 'none';
           if (document.activeElement === input) input.blur();
@@ -2711,13 +2756,16 @@
       input.style.top = `${rect.top + 3 * sy + config.y * sy}px`;
       input.style.width = `${Math.max(24, (config.w - 12) * sx)}px`;
       input.style.height = `${Math.max(20, (config.h - 6) * sy)}px`;
-      input.type = config.type;
-      input.maxLength = config.maxLength;
-      input.inputMode = 'text';
-      input.enterKeyHint = config.key === 'username' ? 'next' : 'go';
-      input.autocomplete = config.key === 'password' ? 'current-password' : 'off';
+      if (input.type !== config.type) input.type = config.type;
+      if (input.maxLength !== config.maxLength) input.maxLength = config.maxLength;
+      if (input.inputMode !== 'text') input.inputMode = 'text';
+      const enterHint = config.key === 'username' ? 'next' : 'go';
+      if (input.enterKeyHint !== enterHint) input.enterKeyHint = enterHint;
+      const autocomplete = config.key === 'password' ? 'current-password' : 'off';
+      if (input.autocomplete !== autocomplete) input.autocomplete = autocomplete;
       if (document.activeElement !== input || focus) input.value = config.value || '';
       if (focus) {
+        this.nativeInputKeepFocus = true;
         input.focus({ preventScroll: true });
         try { input.setSelectionRange(input.value.length, input.value.length); } catch (_) {}
       }
@@ -3552,11 +3600,11 @@
       p.talents = Object.assign({ power: 0, haste: 0, vigor: 0, crit: 0, guard: 0, focus: 0 }, char.talents || {});
       p.materials = Object.assign({ herb: 0, ore: 0, essence: 0 }, char.materials || {});
       p.inventory = Array.isArray(char.inventory)
-        ? char.inventory.map(normalizeItem).filter(Boolean).slice(0, 20) : p.inventory;
+        ? char.inventory.map(item => normalizeItem(item, classId)).filter(Boolean).slice(0, 20) : p.inventory;
       const eq = char.equipment || {};
       p.equipment = {
-        weapon: normalizeItem(eq.weapon),
-        armor: normalizeItem(eq.armor)
+        weapon: normalizeItem(eq.weapon, classId),
+        armor: normalizeItem(eq.armor, classId)
       };
       const starter = starterItems(classId);
       if (!p.equipment.weapon || p.equipment.weapon.slot !== 'weapon') p.equipment.weapon = starter.equipment.weapon;
@@ -3977,7 +4025,7 @@
       this.zoneId = 'forest';
       this.zone = this.zones.forest;
       this.party = [];
-      this.shopStock = makeShopStock();
+      this.shopStock = makeShopStock(this.player.classId);
       this.lockedTargetId = null;
       this.resetZoneActors();
       this.clearInput();
@@ -4054,11 +4102,11 @@
       player.gold = data.gold || 0;
       player.skillPoints = data.skillPoints || 0;
       player.skillRanks = Array.isArray(data.skillRanks) && data.skillRanks.length === 3 ? data.skillRanks.map(v => clamp(v | 0, 1, 5)) : [1, 1, 1];
-      player.inventory = Array.isArray(data.inventory) ? data.inventory.map(normalizeItem).filter(Boolean).slice(0, 20) : [];
+      player.inventory = Array.isArray(data.inventory) ? data.inventory.map(item => normalizeItem(item, classId)).filter(Boolean).slice(0, 20) : [];
       const eq = data.equipment || {};
       player.equipment = {
-        weapon: normalizeItem(eq.weapon),
-        armor: normalizeItem(eq.armor)
+        weapon: normalizeItem(eq.weapon, classId),
+        armor: normalizeItem(eq.armor, classId)
       };
       if (!player.equipment.weapon || player.equipment.weapon.slot !== 'weapon') player.equipment.weapon = starterItems(classId).equipment.weapon;
       if (!player.equipment.armor || player.equipment.armor.slot !== 'armor') player.equipment.armor = starterItems(classId).equipment.armor;
@@ -4076,7 +4124,7 @@
       this.settings.volume = clamp(typeof data.volume === 'number' ? data.volume : 0.35, 0, 1);
       this.audio.setVolume(this.settings.volume);
       this.playTime = data.playTime || 0;
-      this.shopStock = makeShopStock();
+      this.shopStock = makeShopStock(classId);
       this.party = [];
       this.lockedTargetId = null;
       if (this.isBlocked(player.x, player.y, player.radius)) {
@@ -4238,7 +4286,7 @@
         if (enemy.type === 'goblin' && Math.random() < 0.22) this.pickups.push(new Pickup('herb', enemy.x, enemy.y - 6));
         if (enemy.type === 'goblin' && Math.random() < 0.48) this.pickups.push(new Pickup('ore', enemy.x + 4, enemy.y - 6));
         if (enemy.type !== 'boss' && Math.random() < 0.12) {
-          const item = randomMobItem();
+          const item = randomMobItem(this.player ? this.player.classId : 'swordsman');
           this.pickups.push(new Pickup('item', enemy.x + rand(-6, 6), enemy.y - 6, 1, item));
           this.showItemDrop(enemy.x, enemy.y, item);
         }
@@ -4251,7 +4299,7 @@
           Math.random() < 0.6 ? 'weapon' : 'armor',
           rarity,
           rarity === 'epic' ? { attack: 14, hp: 30, defense: 6 } : { attack: 9, hp: 18, defense: 3 },
-          { effect: pick(['flame', 'frost', 'void', 'thunder']), desc: 'Forged in the heart of the dungeon.' }
+          { classId: this.player.classId, effect: pick(['flame', 'frost', 'void', 'thunder']), desc: 'Forged in the heart of the dungeon.' }
         );
         this.pickups.push(new Pickup('chest', enemy.x, enemy.y, 1, item));
         this.audio.sfx('boss');
@@ -4479,8 +4527,8 @@
       this.quest.active = false;
       this.player.gold += 140;
       this.player.gainXp(260, this);
-      const reward = makeItem('Elder Amulet', 'armor', 'epic', { hp: 30, defense: 6, mana: 20 }, {
-        spriteColor: '#e3b7ff', icon: 'A', desc: 'Reward from Elder Tarn.'
+      const reward = makeItem('Elder Amulet', 'armor', 'epic', { hp: 30, defense: 6, mana: 20, manaRegen: 1 }, {
+        classId: this.player.classId, spriteColor: '#e3b7ff', icon: 'A', desc: 'Reward from Elder Tarn.'
       });
       if (!this.player.addItem(reward)) this.player.gold += 60;
       this.log('Cave Patrol complete! +140 gold, +260 XP, epic reward.', '#ffd75e');
@@ -4496,7 +4544,7 @@
       if (this.player.gold < item.price) { this.log('Not enough gold.', '#ff9b9b'); return; }
       if (!this.player.addItem(item)) { this.log('Inventory is full!', '#ff9b9b'); return; }
       this.player.gold -= item.price;
-      this.shopStock[index] = randomShopItem(index);
+      this.shopStock[index] = randomShopItem(index, this.player.classId);
       this.log(`Bought ${item.name} for ${item.price} gold.`, RARITY[item.rarity].color);
       this.audio.sfx('pickup');
       this.save();
@@ -4515,9 +4563,43 @@
       this.save();
     }
 
+    upgradeTalent(id) {
+      const p = this.player;
+      const talent = TALENTS.find(entry => entry.id === id);
+      if (!p || !talent) return;
+      if (p.skillPoints < 1) { this.log('No skill points available.', '#ff9b9b'); return; }
+      const rank = Number((p.talents || {})[id]) || 0;
+      if (rank >= 3) { this.log('That talent is already maxed.', '#ffcf70'); return; }
+      p.talents = Object.assign({ power: 0, haste: 0, vigor: 0, crit: 0, guard: 0, focus: 0 }, p.talents || {});
+      p.skillPoints--;
+      p.talents[id] = rank + 1;
+      p.recalculateStats();
+      this.log(`${talent.name} upgraded to rank ${p.talents[id]}!`, '#c9a6ff');
+      this.audio.sfx('level');
+      this.save();
+    }
+
+    chooseSpecialization(specId) {
+      const p = this.player;
+      if (!p) return;
+      const spec = (SPECS[p.classId] || []).find(entry => entry.id === specId);
+      if (!spec) { this.log('That specialization is not available to your class.', '#ff9b9b'); return; }
+      if (p.level < 10) { this.log('Specializations unlock at level 10.', '#ffcf70'); return; }
+      if (p.spec) { this.log('You already chose a specialization.', '#ffcf70'); return; }
+      p.spec = spec.id;
+      p.recalculateStats();
+      this.log(`You specialized as ${spec.id}!`, '#ffd75e');
+      this.audio.sfx('level');
+      this.save();
+    }
+
     quickUseItem(item, source) {
       const p = this.player;
       if (!p) return;
+      if (source.type === 'inv' && (item.slot === 'weapon' || item.slot === 'armor') && !itemCanEquip(item, p.classId)) {
+        this.addFloater(p.x, p.y - 40, `${CLASS_DATA[item.classId]?.name || 'Other class'} only`, '#ff9b9b', 10);
+        return;
+      }
       if (this.network.online) {
         if (item.slot === 'consumable') this.network.send({ type: 'usePotion', uid: item.uid });
         else if (source.type === 'equip') this.network.send({ type: 'unequip', slot: source.slot });
@@ -4545,13 +4627,24 @@
       if (!p) return;
       const item = drag.item;
       if (this.network.online) {
-        if (target.type === 'equip' && drag.from.type === 'inv') this.network.send({ type: 'equip', uid: item.uid, slot: target.slot });
+        if (target.type === 'equip' && drag.from.type === 'inv') {
+          if (item.slot !== target.slot) { this.addFloater(p.x, p.y - 40, 'Wrong slot', '#ff9b9b', 10); return; }
+          if (!itemCanEquip(item, p.classId)) {
+            this.addFloater(p.x, p.y - 40, `${CLASS_DATA[item.classId]?.name || 'Other class'} only`, '#ff9b9b', 10);
+            return;
+          }
+          this.network.send({ type: 'equip', uid: item.uid, slot: target.slot });
+        }
         else if (target.type === 'inv' && drag.from.type === 'equip') this.network.send({ type: 'unequip', slot: drag.from.slot });
         // Bag-to-bag order is cosmetic; the server keeps the same items in the same bag.
         return;
       }
       if (target.type === 'equip') {
         if (item.slot !== target.slot) { this.addFloater(p.x, p.y - 40, 'Wrong slot', '#ff9b9b', 10); return; }
+        if (!itemCanEquip(item, p.classId)) {
+          this.addFloater(p.x, p.y - 40, `${CLASS_DATA[item.classId]?.name || 'Other class'} only`, '#ff9b9b', 10);
+          return;
+        }
         if (drag.from.type === 'equip') return; // Already equipped in the correct slot.
         const idx = p.inventory.findIndex(it => it.uid === item.uid);
         if (idx < 0) return;
@@ -4613,6 +4706,10 @@
         return;
       }
       this.textField = null;
+      // Button actions intentionally release the mobile keyboard. Text field
+      // taps take the early return above and keep native focus pinned.
+      this.nativeInputKeepFocus = false;
+      if (document.activeElement === this.nativeTextInput) this.nativeTextInput.blur();
       if (action !== 'toggleMobileMenu') this.mobileMenuOpen = false;
       if (/^skill[0-2]$/.test(action)) {
         const i = parseInt(action.slice(5), 10);
@@ -4625,8 +4722,16 @@
       if (action.startsWith('auctionRemove:')) { this.network.send({ type: 'auctionRemove', id: Number(action.split(':')[1]) }); return; }
       if (action.startsWith('mailTake:')) { this.network.send({ type: 'mailTake', id: Number(action.split(':')[1]) }); return; }
       if (action.startsWith('craft:')) { this.network.send({ type: 'craft', recipe: action.split(':')[1] }); return; }
-      if (action.startsWith('talent:')) { this.network.send({ type: 'talent', id: action.split(':')[1] }); return; }
-      if (action.startsWith('spec:')) { this.network.send({ type: 'spec', spec: action.split(':')[1] }); return; }
+      if (action.startsWith('talent:')) {
+        const id = action.split(':')[1];
+        if (this.network.online) this.network.send({ type: 'talent', id }); else this.upgradeTalent(id);
+        return;
+      }
+      if (action.startsWith('spec:')) {
+        const spec = action.split(':')[1];
+        if (this.network.online) this.network.send({ type: 'spec', spec }); else this.chooseSpecialization(spec);
+        return;
+      }
 
       switch (action) {
         case 'start': this.startNewGame(); break;
@@ -4685,6 +4790,10 @@
           const item = this.player && this.player.inventory.find(it => it.uid === this.selectedItemUid);
           if (!item || (item.slot !== 'weapon' && item.slot !== 'armor')) {
             this.log('Select a weapon or armor in your bag first.', '#ffcf70');
+            break;
+          }
+          if (!itemCanEquip(item, this.player.classId)) {
+            this.log(`${CLASS_DATA[item.classId]?.name || 'Another class'} can equip this item.`, '#ff9b9b');
             break;
           }
           this.quickUseItem(item, { type: 'inv' });
@@ -5607,7 +5716,7 @@
         drawItemCell(cx, cy, cell, p.inventory[i] || null, { type: 'inv', index: i });
       }
 
-      // Info column: rarity legend + hint.
+      // Info column: rarity legend and selected item details.
       const ix = x + 452;
       ctx.font = 'bold 11px monospace';
       ctx.fillStyle = '#dbe6ff';
@@ -5616,13 +5725,32 @@
         ctx.fillStyle = RARITY[r].color;
         ctx.fillText(RARITY[r].label, ix, y + 80 + i * 18);
       });
-      ctx.font = '10px monospace';
-      ctx.fillStyle = '#9fb0cd';
-      wrappedText(ctx, 'Double-click an item to equip it or drink a potion. Drag items to rearrange. Equipment changes your stats and sprite colors.', ix, y + 150, 170, 15, 8);
-
       const selectedItem = p.inventory.find(item => item.uid === this.selectedItemUid);
-      const canEquipSelected = selectedItem && (selectedItem.slot === 'weapon' || selectedItem.slot === 'armor');
-      this.button(x + 452, y + 278, 160, 30, canEquipSelected ? `EQUIP ${selectedItem.slot.toUpperCase()}` : 'SELECT GEAR TO EQUIP', 'equipSelectedItem', {
+      if (selectedItem) {
+        ctx.font = 'bold 10px monospace';
+        ctx.fillStyle = RARITY[selectedItem.rarity].color;
+        wrappedText(ctx, selectedItem.name, ix, y + 150, 174, 13, 2);
+        ctx.font = '10px monospace';
+        ctx.fillStyle = '#9fb0cd';
+        const requirement = selectedItem.classId ? `${CLASS_DATA[selectedItem.classId]?.name || selectedItem.classId} only` : 'Any role';
+        ctx.fillText(`${selectedItem.slot.toUpperCase()} · ${requirement}`, ix, y + 180);
+        ctx.fillStyle = '#dbe6ff';
+        wrappedText(ctx, itemStatsText(selectedItem), ix, y + 199, 174, 13, 5);
+        if (selectedItem.desc) {
+          ctx.fillStyle = '#8290aa';
+          wrappedText(ctx, selectedItem.desc, ix, y + 263, 174, 12, 1);
+        }
+      } else {
+        ctx.font = '10px monospace';
+        ctx.fillStyle = '#9fb0cd';
+        wrappedText(ctx, 'Select an item to view its role requirement and attributes. Double-click gear to equip; drag items to rearrange.', ix, y + 150, 174, 15, 7);
+      }
+
+      const isGear = selectedItem && (selectedItem.slot === 'weapon' || selectedItem.slot === 'armor');
+      const canEquipSelected = isGear && itemCanEquip(selectedItem, p.classId);
+      const equipLabel = canEquipSelected ? `EQUIP ${selectedItem.slot.toUpperCase()}`
+        : isGear ? `${CLASS_DATA[selectedItem.classId]?.name || 'OTHER'} ONLY` : 'SELECT GEAR TO EQUIP';
+      this.button(x + 452, y + 278, 160, 30, equipLabel, 'equipSelectedItem', {
         color: canEquipSelected ? '#3f7d55' : '#34405c',
         border: canEquipSelected ? '#8ee6a8' : '#59647a',
         fontSize: 10
@@ -5692,8 +5820,8 @@
         ctx.fillText(item.name, bx + 40, by + 22);
         ctx.font = '10px monospace';
         ctx.fillStyle = '#c8d3ea';
-        const bonus = Object.entries(item.stats).filter(([, v]) => v).map(([k, v]) => `${k} +${v}`).join(', ');
-        wrappedText(ctx, bonus || (item.heal ? `Heals ${item.heal} HP` : item.desc), bx + 40, by + 38, 222, 13, 2);
+        const roleText = item.classId ? `${CLASS_DATA[item.classId]?.name || item.classId} only · ` : '';
+        wrappedText(ctx, roleText + itemStatsText(item), bx + 40, by + 38, 222, 13, 2);
         ctx.fillStyle = '#ffd75e';
         ctx.fillText(`${item.price}g`, bx + 10, by + 84);
         this.button(bx + 172, by + 68, 90, 28, 'BUY', 'shopBuy' + i,
@@ -6056,8 +6184,9 @@
         wrappedText(ctx, t.desc, tx + 10, ty + 40, 150, 12, 3);
         ctx.fillStyle = '#ffd75e';
         ctx.fillText(`${rank}/3`, tx + 10, ty + 78);
+        const canRank = p.skillPoints > 0 && rank < 3;
         this.button(tx + 150, ty + 56, 66, 26, rank >= 3 ? 'MAX' : '+ RANK', 'talent:' + t.id,
-          { color: this.network.online && rank < 3 ? '#5b4b8c' : '#4a3340', fontSize: 9 });
+          { color: canRank ? '#5b4b8c' : '#4a3340', fontSize: 9 });
       });
 
       const specList = SPECS[p.classId] || [];
@@ -6080,7 +6209,7 @@
         ctx.fillText(s.desc, sx + 10, sy + 44);
         if (p.spec !== s.id) {
           this.button(sx + 244, sy + 40, 90, 26, p.level < 10 ? 'LVL 10' : 'CHOOSE', 'spec:' + s.id,
-            { color: this.network.online && p.level >= 10 ? '#3f7d55' : '#4a3340', fontSize: 9 });
+            { color: p.level >= 10 && !p.spec ? '#3f7d55' : '#4a3340', fontSize: 9 });
         }
       });
 
@@ -6090,7 +6219,7 @@
       SKILLS[p.classId].forEach((def, i) => {
         this.button(x + 20 + i * 190, y + 410, 176, 26,
           `${def.name}  R${p.skillRanks[i]}/5`, 'upgrade' + i,
-          { color: this.network.online && p.skillPoints > 0 ? '#2f5f8c' : '#4a3340', fontSize: 9 });
+          { color: p.skillPoints > 0 && p.skillRanks[i] < 5 ? '#2f5f8c' : '#4a3340', fontSize: 9 });
       });
       this.button(x + 590, y + 410, 150, 26, 'CLOSE', 'closePanel', { color: '#34405c' });
     }

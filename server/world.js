@@ -222,9 +222,10 @@ function makeItem(name, slot, rarity, stats = {}, extra = {}) {
     slot: slotKey,
     rarity: rarityKey,
     stats: {
-      hp: 0, attack: 0, defense: 0, speed: 0, range: 0, mana: 0,
+      hp: 0, attack: 0, defense: 0, speed: 0, range: 0, mana: 0, crit: 0, manaRegen: 0,
       ...(stats && typeof stats === 'object' ? stats : {})
     },
+    classId: extra.classId || null,
     spriteColor: extra.spriteColor || RARITY[rarityKey].color,
     icon: extra.icon || String(name || 'I')[0],
     art: extra.art || null,
@@ -248,19 +249,19 @@ const ROLE_ITEM_ART = {
 const ROLE_ITEM_DEFS = {
   swordsman: {
     name: 'Dawnfang Blade', art: ROLE_ITEM_ART.swordsman, icon: 'S',
-    stats: { attack: 18, hp: 12, speed: 4 },
+    stats: { attack: 18, hp: 12, speed: 4, crit: 0.02 },
     effect: 'flame', spriteColor: '#eef5ff', color: '#ffd27a', price: 420,
     desc: 'Swordsman relic: a sunlit blade that burns on impact.'
   },
   archer: {
     name: 'Windsong Bow', art: ROLE_ITEM_ART.archer, icon: 'B',
-    stats: { attack: 14, speed: 12, range: 28 },
+    stats: { attack: 14, speed: 12, range: 28, crit: 0.04 },
     effect: 'frost', spriteColor: '#9ce7c4', color: '#8ee6ff', price: 420,
     desc: 'Archer relic: a living bow that hums with the north wind.'
   },
   mage: {
     name: 'Astral Flame Staff', art: ROLE_ITEM_ART.mage, icon: 'T',
-    stats: { attack: 16, mana: 24, range: 18 },
+    stats: { attack: 16, mana: 24, range: 18, manaRegen: 1.5 },
     effect: 'void', spriteColor: '#c9a6ff', color: '#ffb15c', price: 420,
     desc: 'Mage relic: focuses starlight into an eternal flame.'
   }
@@ -269,6 +270,7 @@ const ROLE_ITEM_DEFS = {
 function roleItem(classId) {
   const def = ROLE_ITEM_DEFS[classId] || ROLE_ITEM_DEFS.swordsman;
   return makeItem(def.name, 'weapon', 'epic', def.stats, {
+    classId,
     art: def.art,
     icon: def.icon,
     spriteColor: def.spriteColor,
@@ -280,10 +282,13 @@ function roleItem(classId) {
 }
 
 // Accept loosely shaped items from old saves / client messages and tidy them.
-function normalizeItem(raw) {
+function normalizeItem(raw, defaultClassId = null) {
   if (!raw || typeof raw !== 'object') return null;
+  const roleClassId = Object.entries(ROLE_ITEM_DEFS)
+    .find(([id, def]) => raw.art === ROLE_ITEM_ART[id] || raw.name === def.name)?.[0];
   return makeItem(raw.name, raw.slot, raw.rarity, raw.stats, {
     uid: raw.uid,
+    classId: raw.classId || roleClassId || (['weapon', 'armor'].includes(raw.slot) ? defaultClassId : null),
     spriteColor: raw.spriteColor,
     icon: raw.icon,
     price: raw.price,
@@ -298,13 +303,14 @@ function normalizeItem(raw) {
 
 function starterItems(classId) {
   const weapon = classId === 'swordsman'
-    ? makeItem('Iron Sword', 'weapon', 'common', { attack: 5 }, { art: 'sword', spriteColor: '#d4e0ec', desc: 'A trusty blade.' })
+    ? makeItem('Iron Sword', 'weapon', 'common', { attack: 5 }, { classId, art: 'sword', spriteColor: '#d4e0ec', desc: 'Swordsman weapon. A trusty blade.' })
     : classId === 'archer'
-      ? makeItem('Short Bow', 'weapon', 'common', { attack: 4 }, { art: 'bow', spriteColor: '#9c6a3d', desc: 'Light and quick.' })
-      : makeItem('Oak Staff', 'weapon', 'common', { attack: 6 }, { art: 'staff', spriteColor: '#b37b45', desc: 'Channels fire magic.' });
+      ? makeItem('Short Bow', 'weapon', 'common', { attack: 4 }, { classId, art: 'bow', spriteColor: '#9c6a3d', desc: 'Archer weapon. Light and quick.' })
+      : makeItem('Oak Staff', 'weapon', 'common', { attack: 6 }, { classId, art: 'staff', spriteColor: '#b37b45', desc: 'Mage weapon. Channels fire magic.' });
 
   const armorColor = classId === 'mage' ? '#8b63c8' : classId === 'archer' ? '#5c9b66' : '#7896c4';
   const armor = makeItem('Traveler Gear', 'armor', 'common', { hp: 10, defense: 2 }, {
+    classId,
     art: 'armor',
     spriteColor: armorColor,
     desc: 'Basic adventurer clothes.'
@@ -319,7 +325,7 @@ function starterItems(classId) {
   };
 }
 
-function randomShopItem(index) {
+function randomShopItem(index, classId = 'swordsman') {
   const rarities = ['common', 'rare', 'rare', 'epic'];
   const rarity = rarities[index % rarities.length];
   const mult = RARITY[rarity].mult;
@@ -335,35 +341,41 @@ function randomShopItem(index) {
   }
 
   if (index % 2 === 0) {
-    return makeItem(
-      rarity === 'epic' ? 'Runed Edge' : rarity === 'rare' ? 'Steelervoir' : 'Practice Weapon',
-      'weapon', rarity, { attack: Math.round(6 * mult) },
-      { art: 'sword', desc: 'Increases attack power.' }
-    );
+    const weapon = classId === 'archer'
+      ? { name: 'Windrunner Bow', art: 'bow', stats: { attack: Math.round(5 * mult), speed: Math.round(4 * mult), crit: 0.01 * mult } }
+      : classId === 'mage'
+        ? { name: 'Starweave Staff', art: 'staff', stats: { attack: Math.round(6 * mult), mana: Math.round(10 * mult), manaRegen: Math.round(0.5 * mult * 10) / 10 } }
+        : { name: 'Runed Edge', art: 'sword', stats: { attack: Math.round(6 * mult), hp: Math.round(4 * mult), defense: Math.max(1, Math.round(mult)) } };
+    return makeItem(weapon.name, 'weapon', rarity, weapon.stats, {
+      classId, art: weapon.art, desc: `${CLASS_DATA[classId].name} weapon with role-specific attributes.`
+    });
   }
 
+  const armor = classId === 'archer'
+    ? { name: 'Windwoven Vest', stats: { hp: Math.round(12 * mult), defense: Math.round(2 * mult), speed: Math.round(2 * mult) } }
+    : classId === 'mage'
+      ? { name: 'Aether Robe', stats: { hp: Math.round(10 * mult), defense: Math.max(1, Math.round(mult)), mana: Math.round(8 * mult), manaRegen: Math.round(0.4 * mult * 10) / 10 } }
+      : { name: 'Dragonhide', stats: { hp: Math.round(16 * mult), defense: Math.round(3 * mult) } };
   return makeItem(
-    rarity === 'epic' ? 'Dragonhide' : rarity === 'rare' ? 'Knight Mail' : 'Padded Vest',
-    'armor', rarity, { hp: Math.round(16 * mult), defense: Math.round(3 * mult) },
-    { art: 'armor', desc: 'Increases HP and defense.' }
+    armor.name, 'armor', rarity, armor.stats,
+    { classId, art: 'armor', desc: `${CLASS_DATA[classId].name} armor with role-specific attributes.` }
   );
 }
 
-function makeShopStock() {
+function makeShopStock(classId = 'swordsman') {
   return [
-    randomShopItem(0),
-    randomShopItem(1),
-    randomShopItem(2),
+    randomShopItem(0, classId),
+    randomShopItem(1, classId),
+    randomShopItem(2, classId),
     roleItem('swordsman'),
     roleItem('archer'),
     roleItem('mage')
   ];
 }
 
-function randomMobDropItem() {
-  const roleIds = Object.keys(ROLE_ITEM_DEFS);
-  if (Math.random() < 0.22) return roleItem(roleIds[Math.floor(Math.random() * roleIds.length)]);
-  return randomShopItem(randInt(0, 5));
+function randomMobDropItem(classId = 'swordsman') {
+  if (Math.random() < 0.22) return roleItem(classId);
+  return randomShopItem(randInt(0, 5), classId);
 }
 
 function freshQuest() {
@@ -396,7 +408,7 @@ export function freshCharacter(username, classId = 'swordsman') {
     materials: { herb: 0, ore: 0, essence: 0 },
     talents: Object.fromEntries(TALENT_IDS.map(id => [id, 0])),
     spec: null,
-    shopStock: makeShopStock(),
+    shopStock: makeShopStock(safeClass),
     playTime: 0,
     savedAt: Date.now()
   };
@@ -618,6 +630,14 @@ export class World {
   hydrate(client) {
     const character = client.character;
     if (!character) return;
+    const classId = CLASS_DATA[character.classId] ? character.classId : 'swordsman';
+    character.inventory = (Array.isArray(character.inventory) ? character.inventory : [])
+      .map(item => normalizeItem(item, classId)).filter(Boolean).slice(0, 20);
+    character.equipment = character.equipment || {};
+    character.equipment.weapon = normalizeItem(character.equipment.weapon, classId);
+    character.equipment.armor = normalizeItem(character.equipment.armor, classId);
+    character.shopStock = (Array.isArray(character.shopStock) ? character.shopStock : makeShopStock(classId))
+      .map(item => normalizeItem(item, classId)).filter(Boolean);
     const savedQuest = character.quest && typeof character.quest === 'object' ? character.quest : {};
     character.quest = { ...freshQuest(), ...savedQuest };
     // The earlier one-step quest awarded an epic item and marked the entire
@@ -746,8 +766,8 @@ export class World {
       speed: clamp(base.speed + lv * 1.2 + eq('speed') + specMods.speed, 60, 210),
       range: base.range + eq('range') + specMods.range,
       defense: round(Math.max(0, base.defense + lv * 0.6 + eq('defense') + talent('guard') * 2 + specMods.defense), 2),
-      crit: round(0.10 + talent('crit') * 0.03 + specMods.crit, 3),
-      manaRegen: round(base.manaRegen + level * 0.3 + talent('focus') * 0.5, 2),
+      crit: round(0.10 + eq('crit') + talent('crit') * 0.03 + specMods.crit, 3),
+      manaRegen: round(base.manaRegen + level * 0.3 + eq('manaRegen') + talent('focus') * 0.5, 2),
       cooldownMult: round((1 - talent('haste') * 0.04) * specMods.cd, 3),
       damageTakenMult: round((1 - talent('guard') * 0.04) * specMods.taken, 3)
     };
@@ -1379,7 +1399,7 @@ export class World {
     if (enemy.type === 'goblin' && Math.random() < 0.48) this.spawnPickup(room, 'material', enemy.x, enemy.y, 1, null, 'ore');
     if (Math.random() < 0.08) this.spawnPickup(room, 'material', enemy.x, enemy.y, 1, null, 'essence');
     if (enemy.type !== 'boss' && Math.random() < 0.12) {
-      const item = randomMobDropItem();
+      const item = randomMobDropItem(source && source.character ? source.character.classId : 'swordsman');
       this.spawnPickup(room, 'item', enemy.x + rand(-6, 6), enemy.y, 1, item);
       this.eventRoom(room, 'fx', {
         visual: 'itemDrop', x: enemy.x, y: enemy.y,
@@ -1409,7 +1429,7 @@ export class World {
         Math.random() < 0.6 ? 'weapon' : 'armor',
         rarity,
         rarity === 'epic' ? { attack: 14, hp: 30, defense: 6 } : { attack: 9, hp: 18, defense: 3 },
-        { effect, desc: 'Forged in the heart of the dungeon.' }
+        { classId: client.character.classId, effect, desc: 'Forged in the heart of the dungeon.' }
       );
 
       client.character.gold += 320;
@@ -1698,7 +1718,7 @@ export class World {
   }
 
   addItem(client, item) {
-    const clean = normalizeItem(item);
+    const clean = normalizeItem(item, client.character && client.character.classId);
     if (!clean) return false;
     if (!Array.isArray(client.character.inventory)) client.character.inventory = [];
     if (client.character.inventory.length >= 20) return false;
@@ -2303,10 +2323,15 @@ export class World {
     const index = inventory.findIndex(item => item && item.uid === message.uid);
     if (index < 0) { this.error(client, 'Item not found in your bag.'); return; }
 
-    const item = normalizeItem(inventory[index]);
+    const item = normalizeItem(inventory[index], client.character.classId);
     if (!item || item.slot !== slot) { this.error(client, 'That item does not fit this slot.'); return; }
+    if (item.classId !== client.character.classId) {
+      this.error(client, `That item is for ${CLASS_DATA[item.classId]?.name || 'another class'} only.`);
+      return;
+    }
 
     const old = client.character.equipment[slot];
+    inventory[index] = item;
     inventory.splice(index, 1);
     client.character.equipment[slot] = item;
     if (old) inventory.push(normalizeItem(old));
@@ -2324,7 +2349,7 @@ export class World {
     if ((client.character.inventory || []).length >= 20) { this.error(client, 'Inventory is full.'); return; }
 
     client.character.equipment[slot] = null;
-    client.character.inventory.push(normalizeItem(item));
+    client.character.inventory.push(normalizeItem(item, client.character.classId));
     this.syncVitals(client);
     this.event(client, 'sfx', { name: 'ui' });
     this.sendCharacter(client);
@@ -2379,10 +2404,10 @@ export class World {
   }
 
   emitShopList(client) {
-    let items = (client.character.shopStock || []).map(item => normalizeItem(item)).filter(Boolean);
+    let items = (client.character.shopStock || []).map(item => normalizeItem(item, client.character.classId)).filter(Boolean);
     // Older cloud saves predate the role relics; refresh the last three slots.
     if (!items.some(item => item.art && String(item.art).startsWith('role'))) {
-      const fresh = makeShopStock();
+      const fresh = makeShopStock(client.character.classId);
       items = items.slice(0, 3).concat(fresh.slice(3));
       client.character.shopStock = items;
     }
@@ -2391,17 +2416,17 @@ export class World {
 
   handleShopBuy(client, message) {
     const index = Math.floor(Number(message.index));
-    const stock = client.character.shopStock || (client.character.shopStock = makeShopStock());
+    const stock = client.character.shopStock || (client.character.shopStock = makeShopStock(client.character.classId));
     if (!Number.isInteger(index) || index < 0 || index >= stock.length) { this.error(client, 'Invalid shop item.'); return; }
 
-    const item = normalizeItem(stock[index]);
+    const item = normalizeItem(stock[index], client.character.classId);
     if (!item) { this.error(client, 'That item is sold out.'); return; }
     if (client.character.gold < item.price) { this.error(client, 'Not enough gold.'); return; }
     if ((client.character.inventory || []).length >= 20) { this.error(client, 'Inventory is full.'); return; }
 
     client.character.gold -= item.price;
     client.character.inventory.push(item);
-    stock[index] = randomShopItem(index);
+    stock[index] = randomShopItem(index, client.character.classId);
     this.event(client, 'system', { text: `Bought ${item.name} for ${item.price} gold.`, color: RARITY[item.rarity].color });
     this.sfx(client, 'pickup');
     this.emitShopList(client);
@@ -2443,8 +2468,8 @@ export class World {
     client.character.gold += 140;
     this.gainXp(client, 260, false);
 
-    const reward = makeItem('Elder Amulet', 'armor', 'epic', { hp: 30, defense: 6, mana: 20 }, {
-      spriteColor: '#e3b7ff', icon: 'A', desc: 'Reward from Elder Tarn.'
+    const reward = makeItem('Elder Amulet', 'armor', 'epic', { hp: 30, defense: 6, mana: 20, manaRegen: 1 }, {
+      classId: client.character.classId, spriteColor: '#e3b7ff', icon: 'A', desc: 'Reward from Elder Tarn.'
     });
     if (this.addItem(client, reward)) {
       this.event(client, 'loot', { name: reward.name, rarity: reward.rarity });
@@ -2465,9 +2490,9 @@ export class World {
     if (recipe === 'potion') {
       result = { cost: { herb: 2, gold: 20 }, item: makeItem('Health Potion', 'consumable', 'common', {}, { icon: 'P', heal: 55, price: 20, desc: 'Restores 55 HP.' }) };
     } else if (recipe === 'sword') {
-      result = { cost: { ore: 3, gold: 60 }, item: makeItem('Runed Edge', 'weapon', 'rare', { attack: 12 }, { effect: 'flame', desc: 'A forged blade that crackles with fire.' }) };
+      result = { cost: { ore: 3, gold: 60 }, item: makeItem('Runed Edge', 'weapon', 'rare', { attack: 12, crit: 0.02 }, { classId: client.character.classId, effect: 'flame', desc: 'A forged weapon made for your class.' }) };
     } else if (recipe === 'armor') {
-      result = { cost: { ore: 2, herb: 2, gold: 50 }, item: makeItem('Woven Guard', 'armor', 'rare', { hp: 24, defense: 5 }, { effect: 'frost', desc: 'Sturdy plate with a chill finish.' }) };
+      result = { cost: { ore: 2, herb: 2, gold: 50 }, item: makeItem('Woven Guard', 'armor', 'rare', { hp: 24, defense: 5, manaRegen: 0.5 }, { classId: client.character.classId, effect: 'frost', desc: 'Sturdy armor woven for your class.' }) };
     } else {
       this.error(client, 'Unknown recipe.');
       return;
