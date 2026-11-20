@@ -51,24 +51,31 @@
     }
   };
 
-  // STAGE 2: each class gets three skills bound to keys 1, 2 and 3.
+  // Each role has four skills, bound to keys 1 through 4.
   const SKILLS = {
     swordsman: [
       { name: 'Dash Strike', cost: 15, cd: 5, desc: 'Dash forward and slash everything you pass.' },
       { name: 'Shield Block', cost: 10, cd: 8, desc: 'Block 80% of damage for 3 seconds.' },
-      { name: 'Whirlwind', cost: 25, cd: 9, desc: 'Spin and hit every nearby enemy.' }
+      { name: 'Whirlwind', cost: 25, cd: 9, desc: 'Spin and hit every nearby enemy.' },
+      { name: 'Seismic Slam', cost: 32, cd: 12, desc: 'Smash the ground, damaging and slowing nearby enemies.' }
     ],
     archer: [
       { name: 'Multi-Shot', cost: 18, cd: 5, desc: 'Fire three arrows in a spread.' },
       { name: 'Roll Dodge', cost: 12, cd: 6, desc: 'Roll quickly and become untouchable.' },
-      { name: 'Poison Arrow', cost: 20, cd: 8, desc: 'An arrow that poisons its target.' }
+      { name: 'Poison Arrow', cost: 20, cd: 8, desc: 'An arrow that poisons its target.' },
+      { name: 'Arrow Rain', cost: 30, cd: 10, desc: 'Rain arrows over the selected area.' }
     ],
     mage: [
       { name: 'Ice Nova', cost: 25, cd: 8, desc: 'Damage and slow all nearby enemies.' },
       { name: 'Blink', cost: 18, cd: 6, desc: 'Teleport toward your cursor.' },
-      { name: 'Meteor', cost: 40, cd: 12, desc: 'Call down a huge fire blast at your cursor.' }
+      { name: 'Meteor', cost: 40, cd: 12, desc: 'Call down a huge fire blast at your cursor.' },
+      { name: 'Arcane Burst', cost: 32, cd: 9, desc: 'Detonate arcane energy in a targeted area.' }
     ]
   };
+
+  function normalizeSkillRanks(ranks) {
+    return Array.from({ length: 4 }, (_, i) => clamp(Number(ranks && ranks[i]) || 1, 1, 5));
+  }
 
   const RARITY = {
     common: { color: '#dedede', mult: 1, label: 'Common' },
@@ -532,8 +539,8 @@
   function npcSprite(type, frame) {
     return cachedSprite(`npc_${type}_${frame}`, () => {
       const g = emptyGrid();
-      const robe = type === 'shop' ? '#b8793c' : type === 'guard' ? '#405c7e' : '#6c76b8';
-      const trim = type === 'shop' ? '#ffd68a' : type === 'guard' ? '#e7d38a' : '#d5d9ff';
+      const robe = type === 'shop' ? '#b8793c' : type === 'guard' ? '#405c7e' : type === 'healer' ? '#4d9b82' : type === 'blacksmith' ? '#72504b' : type === 'scout' ? '#66834f' : '#8b6f49';
+      const trim = type === 'shop' ? '#ffd68a' : type === 'guard' ? '#e7d38a' : type === 'healer' ? '#c2ffe0' : type === 'blacksmith' ? '#ffb36b' : type === 'scout' ? '#d1e89c' : '#f0d28e';
       const bob = frame % 2;
       setRect(g, 5, 2 + bob, 6, 5, '#e8c29b');
       setRect(g, 4, 2 + bob, 8, 2, type === 'shop' ? '#7a4b27' : '#d9d9e8');
@@ -551,6 +558,20 @@
         setRect(g, 11, 8 + bob, 3, 2, '#9aa8bd');
         setRect(g, 12, 3 + bob, 1, 6, '#d7e4ef');
         setPx(g, 12, 2 + bob, '#ffd75e');
+      } else if (type === 'healer') {
+        setRect(g, 11, 8 + bob, 3, 4, '#d9f5dc');
+        setPx(g, 12, 9 + bob, '#f0718a');
+      } else if (type === 'blacksmith') {
+        setRect(g, 12, 7 + bob, 2, 4, '#777d8a');
+        setRect(g, 11, 6 + bob, 4, 2, '#c2c8d0');
+        setPx(g, 13, 5 + bob, '#f0a454');
+      } else if (type === 'scout') {
+        setRect(g, 3, 8 + bob, 2, 5, '#8a5c32');
+        setRect(g, 3, 7 + bob, 3, 2, '#c89b5b');
+        setPx(g, 12, 3 + bob, '#e6d28a');
+      } else if (type === 'villager') {
+        setRect(g, 11, 9 + bob, 4, 3, '#a77a45');
+        setRect(g, 12, 8 + bob, 2, 1, '#e5c778');
       } else {
         setRect(g, 12, 3, 1, 10, '#9a8060');      // staff
         setPx(g, 12, 2, '#9ce7ff');
@@ -1437,8 +1458,8 @@
       this.xpNext = 80;
       this.gold = 30;
       this.skillPoints = 0;
-      this.skillRanks = [1, 1, 1];
-      this.skillCd = [0, 0, 0];
+      this.skillRanks = [1, 1, 1, 1];
+      this.skillCd = [0, 0, 0, 0];
       this.facing = 0;
       this.aim = 0;
       this.attackCd = 0;
@@ -1521,7 +1542,7 @@
       this.skillAnim = Math.max(0, this.skillAnim - dt);
       this.shieldTime = Math.max(0, this.shieldTime - dt);
       this.invuln = Math.max(0, this.invuln - dt);
-      for (let i = 0; i < 3; i++) this.skillCd[i] = Math.max(0, this.skillCd[i] - dt);
+      for (let i = 0; i < 4; i++) this.skillCd[i] = Math.max(0, this.skillCd[i] - dt);
       if (this.emote) {
         this.emote.time -= dt;
         if (this.emote.time <= 0) this.emote = null;
@@ -1614,7 +1635,7 @@
       }
     }
 
-    // STAGE 2: skills 1/2/3 with cooldowns and resource costs.
+    // Skills share cooldown and resource handling across all four hotbar slots.
     useSkill(index, game) {
       if (!this.alive || game.panel || game.paused) return;
       const def = SKILLS[this.classId][index];
@@ -1634,10 +1655,10 @@
       this.skillCd[index] = def.cd * (1 - (rank - 1) * 0.08) * this.finalStats.cooldownMult;
       game.audio.sfx('skill');
       const fxColors = this.classId === 'swordsman'
-        ? ['#dceeff', '#8fd0ff', '#eaf4ff']
+        ? ['#dceeff', '#8fd0ff', '#eaf4ff', '#d2c2a0']
         : this.classId === 'archer'
-          ? ['#b9ffcb', '#b9ffcb', '#8ee46d']
-          : ['#9ce7ff', '#d7b8ff', '#ff9c42'];
+          ? ['#b9ffcb', '#b9ffcb', '#8ee46d', '#a8e8ff']
+          : ['#9ce7ff', '#d7b8ff', '#ff9c42', '#e7b8ff'];
       this.playSkillAnim(game, def, fxColors[index]);
       game.log(`${this.name} used ${def.name}!`, fxColors[index]);
       this.aim = game.getAimAngle(this);
@@ -1659,7 +1680,7 @@
         } else if (index === 1) { // Shield Block
           this.shieldTime = 3;
           game.effects.push(new Effect('ring', this.x, this.y - 10, { color: '#8fd0ff', radius: 16, endRadius: 40, life: 0.4 }));
-        } else { // Whirlwind
+        } else if (index === 2) { // Whirlwind
           game.areaDamage(this.x, this.y, 105, baseDamage * 1.4, this, 'whirlwind');
           game.effects.push(new Effect('ring', this.x, this.y - 8, { color: '#eaf4ff', radius: 20, endRadius: 105, life: 0.45 }));
           for (let i = 0; i < 14; i++) {
@@ -1669,6 +1690,10 @@
             }));
           }
           game.shake = Math.max(game.shake, 6);
+        } else { // Seismic Slam
+          game.areaDamage(this.x, this.y, 145, baseDamage * 1.6, this, 'seismic', { slow: 0.35 });
+          game.effects.push(new Effect('ring', this.x, this.y - 8, { color: '#d2c2a0', radius: 18, endRadius: 145, life: 0.55 }));
+          game.shake = Math.max(game.shake, 8);
         }
       } else if (this.classId === 'archer') {
         if (index === 0) { // Multi-Shot
@@ -1693,7 +1718,7 @@
             color: '#b9ffcb', x2: this.x + Math.cos(aim) * 70, y2: this.y - 8 + Math.sin(aim) * 70,
             life: 0.22, size: 4
           }));
-        } else { // Poison Arrow
+        } else if (index === 2) { // Poison Arrow
           game.effects.push(new Effect('line', this.x, this.y - 10, {
             color: '#8ee46d', x2: this.x + Math.cos(aim) * 160, y2: this.y - 10 + Math.sin(aim) * 160,
             life: 0.24, size: 4
@@ -1703,6 +1728,15 @@
             vx: Math.cos(aim) * 500, vy: Math.sin(aim) * 500,
             damage: baseDamage * 0.9, owner: this, kind: 'poison', poison: 6 * power, radius: 6, life: 2.2
           });
+        } else { // Arrow Rain
+          const target = game.getAimPoint();
+          game.areaDamage(target.x, target.y, 112, baseDamage * 1.5, this, 'arrowRain');
+          game.effects.push(new Effect('ring', target.x, target.y, { color: '#a8e8ff', radius: 12, endRadius: 112, life: 0.5 }));
+          for (let i = 0; i < 12; i++) {
+            const x = target.x + rand(-90, 90);
+            const y = target.y + rand(-90, 90);
+            game.effects.push(new Effect('line', x, y - 45, { color: '#b9ffcb', x2: x, y2: y + 8, life: 0.32, size: 2 }));
+          }
         }
       } else {
         if (index === 0) { // Ice Nova
@@ -1734,10 +1768,20 @@
           this.x = nx;
           this.y = ny;
           game.effects.push(new Effect('ring', this.x, this.y - 10, { color: '#e9d6ff', radius: 8, endRadius: 40, life: 0.3 }));
-        } else { // Meteor
+        } else if (index === 2) { // Meteor
           const target = game.getAimPoint();
           game.pendingMeteors.push({ x: target.x, y: target.y, timer: 0.85, damage: baseDamage * 2.6, owner: this, radius: 108 });
           game.effects.push(new Effect('meteor', target.x, target.y, { color: '#ff8c42', radius: 108, life: 0.85 }));
+        } else { // Arcane Burst
+          const target = game.getAimPoint();
+          game.areaDamage(target.x, target.y, 105, baseDamage * 1.8, this, 'arcane');
+          game.effects.push(new Effect('ring', target.x, target.y, { color: '#e7b8ff', radius: 10, endRadius: 105, life: 0.45 }));
+          for (let i = 0; i < 16; i++) {
+            const a = i / 16 * TAU;
+            game.effects.push(new Effect('particle', target.x, target.y, {
+              color: '#e7b8ff', vx: Math.cos(a) * 145, vy: Math.sin(a) * 145, life: 0.4
+            }));
+          }
         }
       }
     }
@@ -1759,12 +1803,10 @@
       this.alive = false;
       const lost = Math.floor(this.gold * 0.1);
       this.gold -= lost;
-      const spawn = ZONE_SPAWN[game.zoneId];
-      this.x = spawn.x;
-      this.y = spawn.y;
       this.hp = Math.round(this.maxHp * 0.6);
       this.mp = Math.round(this.maxMp * 0.5);
       this.alive = true;
+      game.travelTo({ to: 'village', arrive: ZONE_SPAWN.village });
       if (game.pet) { game.pet.x = this.x + 24; game.pet.y = this.y + 18; }
       game.log(`You were defeated! Lost ${lost} gold.`, '#ff9b9b');
       game.addFloater(this.x, this.y - 48, 'Respawn!', '#ffd75e', 15);
@@ -2395,7 +2437,11 @@
     { type: 'quest', name: 'Elder Tarn', x: 770, y: 430 }
   ];
   const VILLAGE_NPC_DEFS = [
-    { type: 'guard', name: 'Village Guard', x: 1650, y: 1168 }
+    { type: 'guard', name: 'Village Guard', x: 1650, y: 1168 },
+    { type: 'healer', name: 'Healer Liora', x: 1424, y: 1168 },
+    { type: 'scout', name: 'Scout Rowan', x: 1552, y: 1008 },
+    { type: 'blacksmith', name: 'Blacksmith Borin', x: 1760, y: 1168 },
+    { type: 'villager', name: 'Farmer Pella', x: 1552, y: 1296 }
   ];
 
   const BOSS_POS = { x: 1560, y: 1120 };
@@ -2711,7 +2757,7 @@
         this.game.log('Disconnected from game server.', '#ff9b9b');
       });
       this.socket.addEventListener('error', () => {
-        this.game.log('WebSocket error. Is server.js running on port 3000?', '#ff9b9b');
+        this.game.log(`Cannot reach game server: ${this.url}`, '#ff9b9b');
       });
     }
     send(obj) {
@@ -3115,7 +3161,7 @@
           }
           else this.player && this.player.attack(this);
           break;
-        case '1': case '2': case '3': {
+        case '1': case '2': case '3': case '4': {
           const idx = Number(k) - 1;
           this.activateSkill(idx);
           break;
@@ -3638,7 +3684,7 @@
       p.shieldTime = Math.max(0, p.shieldTime - dt);
       p.invuln = Math.max(0, p.invuln - dt);
       p.dashTime = Math.max(0, p.dashTime - dt);
-      for (let i = 0; i < 3; i++) p.skillCd[i] = Math.max(0, (p.skillCd[i] || 0) - dt);
+      for (let i = 0; i < 4; i++) p.skillCd[i] = Math.max(0, (p.skillCd[i] || 0) - dt);
       if (p.emote) {
         if (typeof p.emote === 'object') {
           p.emote.time -= dt;
@@ -3711,7 +3757,7 @@
       if (Number.isFinite(data.gold)) p.gold = data.gold;
       if (Number.isFinite(data.xp)) p.xp = data.xp;
       if (Number.isFinite(data.xpNext)) p.xpNext = data.xpNext;
-      if (Array.isArray(data.skillCd)) p.skillCd = data.skillCd.slice(0, 3).map(v => Math.max(0, Number(v) || 0));
+      if (Array.isArray(data.skillCd)) p.skillCd = Array.from({ length: 4 }, (_, i) => Math.max(0, Number(data.skillCd[i]) || 0));
       if (Number.isFinite(data.skillAnim)) p.skillAnim = data.skillAnim;
       if (data.skillAnimColor) p.skillAnimColor = data.skillAnimColor;
       if (data.skillAnimName) p.skillAnimName = data.skillAnimName;
@@ -3758,8 +3804,7 @@
       p.xpNext = Math.max(1, Number(char.xpNext) || Math.floor(80 * Math.pow(p.level, 1.28)));
       p.gold = Math.max(0, Number(char.gold) || 0);
       p.skillPoints = Math.max(0, Number(char.skillPoints) || 0);
-      p.skillRanks = Array.isArray(char.skillRanks) && char.skillRanks.length === 3
-        ? char.skillRanks.map(v => clamp(Number(v) || 1, 1, 5)) : [1, 1, 1];
+      p.skillRanks = normalizeSkillRanks(char.skillRanks);
       p.spec = char.spec || '';
       p.talents = Object.assign({ power: 0, haste: 0, vigor: 0, crit: 0, guard: 0, focus: 0 }, char.talents || {});
       p.materials = Object.assign({ herb: 0, ore: 0, essence: 0 }, char.materials || {});
@@ -3773,7 +3818,7 @@
       const starter = starterItems(classId);
       if (!p.equipment.weapon || p.equipment.weapon.slot !== 'weapon') p.equipment.weapon = starter.equipment.weapon;
       if (!p.equipment.armor || p.equipment.armor.slot !== 'armor') p.equipment.armor = starter.equipment.armor;
-      if (Array.isArray(char.skillCd)) p.skillCd = char.skillCd.slice(0, 3).map(v => Math.max(0, Number(v) || 0));
+      if (Array.isArray(char.skillCd)) p.skillCd = Array.from({ length: 4 }, (_, i) => Math.max(0, Number(char.skillCd[i]) || 0));
       p.recalculateStats(false);
       if (Number.isFinite(char.hp)) p.hp = clamp(char.hp, 0, p.maxHp);
       else if (fresh) p.hp = p.maxHp;
@@ -3924,7 +3969,7 @@
       const visual = ev.visual || 'skill';
       const classId = CLASS_DATA[ev.classId] ? ev.classId
         : (this.player && this.player.classId) || 'swordsman';
-      const index = clamp(Math.floor(Number(ev.index) || 0), 0, 2);
+      const index = clamp(Math.floor(Number(ev.index) || 0), 0, 3);
       const x = Number.isFinite(ev.x) ? ev.x : (this.player ? this.player.x : 0);
       const y = Number.isFinite(ev.y) ? ev.y : (this.player ? this.player.y : 0);
       const aim = Number.isFinite(ev.aim) ? ev.aim : 0;
@@ -4021,10 +4066,14 @@
         } else if (index === 1) {
           ring(x, y - 10, 16, 44, 0.4);
           burst(x, y - 10, 10, 22, 80, 0.35);
-        } else {
+        } else if (index === 2) {
           ring(x, y - 8, 20, 108, 0.45);
           burst(x, y - 10, 18, 30, 150, 0.4);
           this.shake = Math.max(this.shake, 6);
+        } else {
+          ring(x, y - 8, 18, 145, 0.55);
+          burst(x, y - 10, 22, 38, 170, 0.45);
+          this.shake = Math.max(this.shake, 8);
         }
       } else if (classId === 'archer') {
         if (index === 0) {
@@ -4036,9 +4085,12 @@
         } else if (index === 1) {
           ring(x, y - 6, 12, 46, 0.35);
           line(x, y - 8, x + cos * 70, y - 8 + sin * 70, 0.22, 4);
-        } else {
+        } else if (index === 2) {
           line(x, y - 10, tx, ty - 10, 0.24, 4);
           burst(tx, ty, 12, 18, 90, 0.4);
+        } else {
+          ring(tx, ty, 12, 112, 0.5);
+          burst(tx, ty, 18, 80, 120, 0.4);
         }
       } else {
         if (index === 0) {
@@ -4049,8 +4101,11 @@
           line(x, y - 10, tx, ty - 10, 0.25, 4);
           ring(x, y - 10, 8, 42, 0.3);
           ring(tx, ty - 10, 8, 42, 0.3);
-        } else {
+        } else if (index === 2) {
           this.effects.push(new Effect('meteor', tx, ty, { color, radius: 108, life: 0.7 }));
+        } else {
+          ring(tx, ty, 10, 105, 0.45);
+          burst(tx, ty, 20, 32, 145, 0.4);
         }
       }
     }
@@ -4191,13 +4246,13 @@
     startNewGame() {
       this.audio.unlock();
       this.audio.setVolume(this.settings.volume);
-      const spawn = ZONE_SPAWN.forest;
+      const spawn = ZONE_SPAWN.village;
       this.player = new Player(this.selectedClass, this.nameInput, spawn.x, spawn.y);
       this.pet = new Pet(spawn.x + 24, spawn.y + 18);
       this.quest = freshQuest();
       this.bossDefeated = false;
-      this.zoneId = 'forest';
-      this.zone = this.zones.forest;
+      this.zoneId = 'village';
+      this.zone = this.zones.village;
       this.party = [];
       this.shopStock = makeShopStock(this.player.classId);
       this.lockedTargetId = null;
@@ -4275,7 +4330,7 @@
       player.xpNext = data.xpNext || Math.floor(80 * Math.pow(player.level, 1.28));
       player.gold = data.gold || 0;
       player.skillPoints = data.skillPoints || 0;
-      player.skillRanks = Array.isArray(data.skillRanks) && data.skillRanks.length === 3 ? data.skillRanks.map(v => clamp(v | 0, 1, 5)) : [1, 1, 1];
+      player.skillRanks = normalizeSkillRanks(data.skillRanks);
       player.inventory = Array.isArray(data.inventory) ? compactInventory(data.inventory.map(item => normalizeItem(item, classId)).filter(Boolean)) : [];
       const eq = data.equipment || {};
       player.equipment = {
@@ -4624,6 +4679,18 @@
       } else if (found.obj.type === 'guard') {
         this.log('Village Guard: The wardstones are dimming. I heard something wake beneath Mount Veyr.', '#9ce7ff');
         this.audio.sfx('ui');
+      } else if (found.obj.type === 'healer') {
+        this.log('Healer Liora: The forest herbs glow faintly since the seal cracked. Elder Tarn may need them for the wardstones.', '#a8f0cd');
+        this.audio.sfx('ui');
+      } else if (found.obj.type === 'scout') {
+        this.log('Scout Rowan: I saw a cold light flicker below Mount Veyr. The old road leads to the cave.', '#c7e8ff');
+        this.audio.sfx('ui');
+      } else if (found.obj.type === 'blacksmith') {
+        this.log('Blacksmith Borin: The mountain trembles at night. A strong weapon may help you survive the cave.', '#ffc18b');
+        this.audio.sfx('ui');
+      } else if (found.obj.type === 'villager') {
+        this.log('Farmer Pella: Slimes came out of the woods after the seal broke. Please help Elder Tarn.', '#f0d28e');
+        this.audio.sfx('ui');
       } else {
         this.panel = 'quest';
         this.audio.sfx('ui');
@@ -4927,7 +4994,7 @@
       this.nativeInputKeepFocus = false;
       if (document.activeElement === this.nativeTextInput) this.nativeTextInput.blur();
       if (action !== 'toggleMobileMenu') this.mobileMenuOpen = false;
-      if (/^skill[0-2]$/.test(action)) {
+      if (/^skill[0-3]$/.test(action)) {
         const i = parseInt(action.slice(5), 10);
         this.activateSkill(i);
         return;
@@ -5616,9 +5683,9 @@
       const p = this.player;
       if (!p) return;
       const skills = SKILLS[p.classId];
-      const startX = VIEW_W / 2 - 116;
+      const startX = VIEW_W / 2 - 150;
       const y = VIEW_H - 76;
-      for (let i = 0; i < 3; i++) {
+      for (let i = 0; i < 4; i++) {
         const x = startX + i * 76;
         const def = skills[i];
         const cd = p.skillCd[i];
@@ -5862,7 +5929,7 @@
       ctx.font = '11px monospace';
       ctx.fillText(this.network.connected ? `Connected to ${this.network.url}` :
         this.network.connecting ? 'Connecting to server...' :
-          `Server offline. Start server.js, or open ?ws=ws://host:port/ws`, VIEW_W / 2, 450);
+          'Server offline. Deploy the Node server and connect with ?ws=wss://your-server/ws', VIEW_W / 2, 450);
       ctx.fillStyle = '#7f8ca5';
       ctx.font = '10px monospace';
       ctx.fillText('Offline mode still works: press Esc or BACK, then START.', VIEW_W / 2, 476);
@@ -5926,11 +5993,72 @@
         ctx.globalAlpha = 1;
       }
 
+      // The broken seal flickers over Mount Veyr while motes drift around
+      // Hearthvale, giving the story screen a little life without covering text.
+      const riftPulse = 0.55 + (Math.sin(this.time * 3.1) + 1) * 0.18;
+      ctx.save();
+      ctx.globalAlpha = riftPulse;
+      ctx.shadowColor = '#9b83ff';
+      ctx.shadowBlur = 18 + Math.sin(this.time * 4) * 5;
+      ctx.strokeStyle = '#c9baff';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(873, 269);
+      ctx.lineTo(867, 282);
+      ctx.lineTo(875, 292);
+      ctx.lineTo(866, 306);
+      ctx.lineTo(873, 318);
+      ctx.stroke();
+      ctx.strokeStyle = '#755eff';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(878, 273);
+      ctx.lineTo(873, 286);
+      ctx.lineTo(880, 296);
+      ctx.lineTo(871, 310);
+      ctx.stroke();
+      ctx.restore();
+      for (let i = 0; i < 14; i++) {
+        const side = i % 2 ? 1 : -1;
+        const drift = (this.time * (12 + i % 4 * 3) + i * 19) % 58;
+        const fx = 870 + side * (8 + Math.sin(this.time * 2 + i) * 3 + drift * 0.22);
+        const fy = 269 + ((i * 17 + this.time * (18 + i % 3 * 5)) % 62);
+        ctx.globalAlpha = 0.35 + (Math.sin(this.time * 3 + i) + 1) * 0.3;
+        ctx.fillStyle = i % 3 ? '#b6a9ff' : '#ffe39a';
+        ctx.fillRect(fx, fy, 2, 2);
+      }
+      ctx.globalAlpha = 1;
+
+      for (let i = 0; i < 18; i++) {
+        const edge = i % 2 ? 1 : 0;
+        const baseX = edge ? 846 : 8;
+        const x = baseX + ((i * 17 + this.time * (8 + i % 3 * 3)) % 106);
+        const y = 390 + ((i * 29 + Math.sin(this.time * 1.7 + i) * 8) % 136);
+        ctx.globalAlpha = 0.3 + (Math.sin(this.time * 2.4 + i * 1.3) + 1) * 0.3;
+        ctx.fillStyle = i % 4 === 0 ? '#ffe39a' : '#a8e7d0';
+        ctx.shadowColor = ctx.fillStyle;
+        ctx.shadowBlur = 7;
+        ctx.fillRect(x, y, 3, 3);
+      }
+      ctx.globalAlpha = 1;
+      ctx.shadowBlur = 0;
+
+      // A small traveling party walks in place at the foot of the scene.
+      const introFrame = Math.floor(this.time * 3) % 4;
+      ['swordsman', 'archer', 'mage'].forEach((classId, i) => {
+        const bob = Math.sin(this.time * 4 + i * 1.8) * 2;
+        drawSprite(ctx, playerSprite(classId, introFrame, false), 50 + i * 30, 532 + bob, 2);
+      });
+      ['mage', 'swordsman', 'archer'].forEach((classId, i) => {
+        const bob = Math.sin(this.time * 4 + i * 1.8 + 1) * 2;
+        drawSprite(ctx, playerSprite(classId, introFrame, false), 850 + i * 30, 532 + bob, 2);
+      });
+
       ctx.textAlign = 'center';
       ctx.fillStyle = '#ffd75e';
       ctx.font = 'bold 38px monospace';
-      ctx.shadowColor = 'rgba(0,0,0,0.65)';
-      ctx.shadowBlur = 10;
+      ctx.shadowColor = '#ffc85e';
+      ctx.shadowBlur = 8 + (Math.sin(this.time * 2.2) + 1) * 5;
       ctx.fillText('PIXEL REALM', VIEW_W / 2, 61);
       ctx.shadowBlur = 0;
       ctx.font = 'bold 13px monospace';
@@ -6228,23 +6356,23 @@
       const skills = SKILLS[p.classId];
       skills.forEach((def, i) => {
         const bx = x + 18;
-        const by = y + 46 + i * 106;
+        const by = y + 44 + i * 82;
         ctx.fillStyle = 'rgba(18,26,44,0.9)';
-        ctx.fillRect(bx, by, w - 36, 94);
+        ctx.fillRect(bx, by, w - 36, 72);
         ctx.strokeStyle = CLASS_DATA[p.classId].color;
-        ctx.strokeRect(bx + 0.5, by + 0.5, w - 37, 93);
+        ctx.strokeRect(bx + 0.5, by + 0.5, w - 37, 71);
         ctx.font = 'bold 14px monospace';
         ctx.textAlign = 'left';
         ctx.fillStyle = '#fff';
         ctx.fillText(`${i + 1}. ${def.name}`, bx + 12, by + 22);
         ctx.font = '11px monospace';
         ctx.fillStyle = '#9fb0cd';
-        ctx.fillText(`Rank ${p.skillRanks[i]}/5   Cost ${def.cost}   Cooldown ${def.cd.toFixed(1)}s`, bx + 12, by + 40);
+        ctx.fillText(`Rank ${p.skillRanks[i]}/5   Cost ${def.cost}   Cooldown ${def.cd.toFixed(1)}s`, bx + 12, by + 39);
         ctx.fillStyle = '#dbe6ff';
         ctx.font = '10px monospace';
-        wrappedText(ctx, def.desc, bx + 12, by + 58, 300, 13, 2);
+        wrappedText(ctx, def.desc, bx + 12, by + 54, 300, 12, 2);
         const canUpgrade = p.skillPoints > 0 && p.skillRanks[i] < 5;
-        this.button(bx + 344, by + 30, 118, 34,
+        this.button(bx + 344, by + 20, 118, 32,
           p.skillRanks[i] >= 5 ? 'MAX' : '+ UPGRADE', 'upgrade' + i,
           { color: canUpgrade ? '#3f7d55' : '#394154', textColor: canUpgrade ? '#fff' : '#8c97ad' });
       });
@@ -6778,6 +6906,7 @@
       roundButton(VIEW_W - 150, VIEW_H - 58, 24, '1', 'skill0', '#4b6ba8');
       roundButton(VIEW_W - 208, VIEW_H - 50, 22, '2', 'skill1', '#4b6ba8');
       roundButton(VIEW_W - 258, VIEW_H - 44, 20, '3', 'skill2', '#4b6ba8');
+      roundButton(VIEW_W - 302, VIEW_H - 38, 18, '4', 'skill3', '#4b6ba8');
       roundButton(VIEW_W - 70, VIEW_H - 158, 24, 'F', 'interact', '#8a6bb8');
       roundButton(VIEW_W - 122, VIEW_H - 138, 20, 'E', 'emote', '#5d7f55');
       roundButton(VIEW_W - 178, VIEW_H - 168, 24,

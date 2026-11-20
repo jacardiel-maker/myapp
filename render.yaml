@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: pixel-realm-server
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      - key: DB_PATH
+        value: /tmp/pixel-realm.db

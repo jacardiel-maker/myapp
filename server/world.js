@@ -39,19 +39,26 @@ const SKILLS = {
   swordsman: [
     { name: 'Dash Strike', cost: 15, cd: 5 },
     { name: 'Shield Block', cost: 10, cd: 8 },
-    { name: 'Whirlwind', cost: 25, cd: 9 }
+    { name: 'Whirlwind', cost: 25, cd: 9 },
+    { name: 'Seismic Slam', cost: 32, cd: 12 }
   ],
   archer: [
     { name: 'Multi-Shot', cost: 18, cd: 5 },
     { name: 'Roll Dodge', cost: 12, cd: 6 },
-    { name: 'Poison Arrow', cost: 20, cd: 8 }
+    { name: 'Poison Arrow', cost: 20, cd: 8 },
+    { name: 'Arrow Rain', cost: 30, cd: 10 }
   ],
   mage: [
     { name: 'Ice Nova', cost: 25, cd: 8 },
     { name: 'Blink', cost: 18, cd: 6 },
-    { name: 'Meteor', cost: 40, cd: 12 }
+    { name: 'Meteor', cost: 40, cd: 12 },
+    { name: 'Arcane Burst', cost: 32, cd: 9 }
   ]
 };
+
+function normalizeSkillRanks(ranks) {
+  return Array.from({ length: 4 }, (_, i) => clamp(Number(ranks && ranks[i]) || 1, 1, 5));
+}
 
 const RARITY = {
   common: { color: '#dedede', mult: 1 },
@@ -104,7 +111,11 @@ const NPC_DEFS = [
   { type: 'quest', name: 'Elder Tarn', x: 770, y: 430, radius: 14 }
 ];
 const VILLAGE_NPC_DEFS = [
-  { type: 'guard', name: 'Village Guard', x: 1650, y: 1168, radius: 15 }
+  { type: 'guard', name: 'Village Guard', x: 1650, y: 1168, radius: 15 },
+  { type: 'healer', name: 'Healer Liora', x: 1424, y: 1168, radius: 14 },
+  { type: 'scout', name: 'Scout Rowan', x: 1552, y: 1008, radius: 14 },
+  { type: 'blacksmith', name: 'Blacksmith Borin', x: 1760, y: 1168, radius: 14 },
+  { type: 'villager', name: 'Farmer Pella', x: 1552, y: 1296, radius: 14 }
 ];
 
 const ZONE_ENEMY_COUNTS = {
@@ -465,14 +476,14 @@ export function freshCharacter(username, classId = 'swordsman') {
     hp: base.maxHp,
     mp: base.mana,
     skillPoints: 0,
-    skillRanks: [1, 1, 1],
+    skillRanks: [1, 1, 1, 1],
     inventory: starter.inventory,
     equipment: starter.equipment,
     quest: freshQuest(),
     bossDefeated: false,
-    zoneId: 'forest',
-    x: ZONE_SPAWN.forest.x,
-    y: ZONE_SPAWN.forest.y,
+    zoneId: 'village',
+    x: ZONE_SPAWN.village.x,
+    y: ZONE_SPAWN.village.y,
     materials: { herb: 0, ore: 0, essence: 0 },
     talents: Object.fromEntries(TALENT_IDS.map(id => [id, 0])),
     spec: null,
@@ -667,7 +678,7 @@ export class World {
     client.facing = 0;
     client.aim = 0;
     client.attackCd = 0;
-    client.skillCd = [0, 0, 0];
+    client.skillCd = [0, 0, 0, 0];
     client.skillAnim = 0;
     client.skillAnimColor = '#fff';
     client.skillAnimName = '';
@@ -706,6 +717,7 @@ export class World {
     character.equipment = character.equipment || {};
     character.equipment.weapon = normalizeItem(character.equipment.weapon, classId);
     character.equipment.armor = normalizeItem(character.equipment.armor, classId);
+    character.skillRanks = normalizeSkillRanks(character.skillRanks);
     character.shopStock = (Array.isArray(character.shopStock) ? character.shopStock : makeShopStock(classId))
       .map(item => normalizeItem(item, classId)).filter(Boolean);
     const savedQuest = character.quest && typeof character.quest === 'object' ? character.quest : {};
@@ -1119,7 +1131,7 @@ export class World {
     if (!room) return;
 
     client.attackCd = Math.max(0, client.attackCd - dt);
-    for (let i = 0; i < 3; i++) client.skillCd[i] = Math.max(0, client.skillCd[i] - dt);
+    for (let i = 0; i < 4; i++) client.skillCd[i] = Math.max(0, client.skillCd[i] - dt);
     client.skillAnim = Math.max(0, client.skillAnim - dt);
     client.shieldTime = Math.max(0, client.shieldTime - dt);
     client.invuln = Math.max(0, client.invuln - dt);
@@ -1139,7 +1151,7 @@ export class World {
 
     if (!client.alive) {
       client.respawn -= dt;
-      if (client.respawn <= 0) this.respawnPlayer(client, room);
+      if (client.respawn <= 0) this.respawnPlayer(client);
       return;
     }
 
@@ -1172,17 +1184,19 @@ export class World {
     character.y = round(client.y, 2);
   }
 
-  respawnPlayer(client, room) {
-    const spawn = room.public ? (ZONE_SPAWN[room.zoneId] || ZONE_SPAWN.forest) : DUNGEON_SPAWN;
+  respawnPlayer(client) {
+    const village = this.rooms.get('village');
+    if (!village) {
+      this.error(client, 'The village is unavailable right now.');
+      return;
+    }
     client.alive = true;
     client.hp = client.maxHp;
     client.mp = client.maxMp;
-    client.x = spawn.x;
-    client.y = spawn.y;
     client.invuln = 1.5;
-    this.event(client, 'system', { text: 'You were revived at the entrance.', color: '#8ee6ff' });
+    this.changeRoom(client, village, ZONE_SPAWN.village);
+    this.event(client, 'system', { text: 'You were revived in Hearthvale Village.', color: '#8ee6ff' });
     this.sfx(client, 'level');
-    this.sendCharacter(client);
   }
 
   // ---------- Enemies ----------
@@ -2018,7 +2032,7 @@ export class World {
     if (!client.alive) return;
     const index = Math.floor(Number(message.index));
     const classId = client.character.classId;
-    if (!Number.isInteger(index) || index < 0 || index > 2) { this.error(client, 'Invalid skill index.'); return; }
+    if (!Number.isInteger(index) || index < 0 || index > 3) { this.error(client, 'Invalid skill index.'); return; }
 
     const def = SKILLS[classId][index];
     if (!def) { this.error(client, 'Skill not found.'); return; }
@@ -2048,10 +2062,10 @@ export class World {
     const ox = client.x;
     const oy = client.y;
     const colors = classId === 'swordsman'
-      ? ['#dceeff', '#8fd0ff', '#eaf4ff']
+      ? ['#dceeff', '#8fd0ff', '#eaf4ff', '#d2c2a0']
       : classId === 'archer'
-        ? ['#b9ffcb', '#b9ffcb', '#8ee46d']
-        : ['#9ce7ff', '#d7b8ff', '#ff9c42'];
+        ? ['#b9ffcb', '#b9ffcb', '#8ee46d', '#a8e8ff']
+        : ['#9ce7ff', '#d7b8ff', '#ff9c42', '#e7b8ff'];
     const fxColor = colors[index];
 
     client.skillAnim = 0.55;
@@ -2090,8 +2104,12 @@ export class World {
         }
       } else if (index === 1) {
         client.shieldTime = 3; // 80% damage reduction in damagePlayer().
-      } else {
+      } else if (index === 2) {
         this.areaDamage(room, client.x, client.y, 105, baseDamage * 1.4, client, 'whirlwind');
+      } else {
+        this.areaDamage(room, client.x, client.y, 145, baseDamage * 1.6, client, 'seismic', { slow: 0.35 });
+        fx.tx = client.x;
+        fx.ty = client.y;
       }
     } else if (classId === 'archer') {
       if (index === 0) {
@@ -2114,7 +2132,7 @@ export class World {
         client.invuln = 0.65;
         fx.tx = ox + cos * 70;
         fx.ty = oy + sin * 70;
-      } else {
+      } else if (index === 2) {
         fx.tx = ox + cos * 160;
         fx.ty = oy + sin * 160;
         this.spawnProjectile(room, {
@@ -2127,6 +2145,24 @@ export class World {
           kind: 'poison', radius: 6, life: 2.2,
           poison: 6 * power
         });
+      } else {
+        const requestedX = Number(message && message.aimX);
+        const requestedY = Number(message && message.aimY);
+        const hasTargetPoint = Number.isFinite(requestedX) && Number.isFinite(requestedY);
+        let targetX = lockedTarget ? lockedTarget.x : hasTargetPoint ? requestedX : ox + cos * 240;
+        let targetY = lockedTarget ? lockedTarget.y - 8 : hasTargetPoint ? requestedY : oy + sin * 240;
+        const dx = targetX - ox;
+        const dy = targetY - (oy - 8);
+        const distance = Math.hypot(dx, dy);
+        if (distance > 320) {
+          targetX = ox + dx / distance * 320;
+          targetY = oy - 8 + dy / distance * 320;
+        }
+        targetX = clamp(targetX, 40, room.w * TILE - 40);
+        targetY = clamp(targetY, 40, room.h * TILE - 40);
+        fx.tx = targetX;
+        fx.ty = targetY;
+        this.areaDamage(room, targetX, targetY, 112, baseDamage * 1.5, client, 'arrowRain');
       }
     } else {
       if (index === 0) {
@@ -2145,7 +2181,7 @@ export class World {
         client.x = nx;
         client.y = ny;
         this.sfxRoom(room, 'blink');
-      } else {
+      } else if (index === 2) {
         // Meteor lands on the locked mob or the explicit cursor target.
         const requestedX = Number(message && message.aimX);
         const requestedY = Number(message && message.aimY);
@@ -2166,6 +2202,24 @@ export class World {
         fx.tx = tx;
         fx.ty = ty;
         this.scheduleMeteor(room, tx, ty, baseDamage * 2.2, client.id);
+      } else {
+        const requestedX = Number(message && message.aimX);
+        const requestedY = Number(message && message.aimY);
+        const hasTargetPoint = Number.isFinite(requestedX) && Number.isFinite(requestedY);
+        let targetX = lockedTarget ? lockedTarget.x : hasTargetPoint ? requestedX : ox + cos * 220;
+        let targetY = lockedTarget ? lockedTarget.y - 8 : hasTargetPoint ? requestedY : oy + sin * 220;
+        const dx = targetX - ox;
+        const dy = targetY - (oy - 8);
+        const distance = Math.hypot(dx, dy);
+        if (distance > 260) {
+          targetX = ox + dx / distance * 260;
+          targetY = oy - 8 + dy / distance * 260;
+        }
+        targetX = clamp(targetX, 40, room.w * TILE - 40);
+        targetY = clamp(targetY, 40, room.h * TILE - 40);
+        fx.tx = targetX;
+        fx.ty = targetY;
+        this.areaDamage(room, targetX, targetY, 105, baseDamage * 1.8, client, 'arcane');
       }
     }
 
@@ -2247,6 +2301,14 @@ export class World {
       this.emitShopList(client);
     } else if (npc.type === 'guard') {
       this.event(client, 'system', { text: `${npc.name}: The wardstones are dimming. I heard something wake beneath Mount Veyr.`, color: '#9ce7ff' });
+    } else if (npc.type === 'healer') {
+      this.event(client, 'system', { text: `${npc.name}: The forest herbs glow faintly since the seal cracked. Elder Tarn may need them for the wardstones.`, color: '#a8f0cd' });
+    } else if (npc.type === 'scout') {
+      this.event(client, 'system', { text: `${npc.name}: I saw a cold light flicker below Mount Veyr. The old road leads to the cave.`, color: '#c7e8ff' });
+    } else if (npc.type === 'blacksmith') {
+      this.event(client, 'system', { text: `${npc.name}: The mountain trembles at night. A strong weapon may help you survive the cave.`, color: '#ffc18b' });
+    } else if (npc.type === 'villager') {
+      this.event(client, 'system', { text: `${npc.name}: Slimes came out of the woods after the seal broke. Please help Elder Tarn.`, color: '#f0d28e' });
     } else {
       const quest = client.character.quest;
       const status = quest.claimed
@@ -2505,9 +2567,9 @@ export class World {
 
   handleSkillUp(client, message) {
     const index = Math.floor(Number(message.index));
-    if (!Number.isInteger(index) || index < 0 || index > 2) { this.error(client, 'Invalid skill index.'); return; }
-    const ranks = client.character.skillRanks;
-    if (!Array.isArray(ranks) || ranks.length !== 3) client.character.skillRanks = ranks = [1, 1, 1];
+    if (!Number.isInteger(index) || index < 0 || index > 3) { this.error(client, 'Invalid skill index.'); return; }
+    const ranks = normalizeSkillRanks(client.character.skillRanks);
+    client.character.skillRanks = ranks;
     if (ranks[index] >= 5) { this.error(client, 'That skill is already at rank 5.'); return; }
     if ((client.character.skillPoints || 0) < 1) { this.error(client, 'No skill points available.'); return; }
 
@@ -2520,8 +2582,8 @@ export class World {
   handleTalent(client, message) {
     const id = String(message.id || '');
 
-    // Also accept "skill0".."skill2" here for older clients.
-    const match = /^skill([0-2])$/.exec(id);
+    // Also accept "skill0".."skill3" here for older clients.
+    const match = /^skill([0-3])$/.exec(id);
     if (match) { this.handleSkillUp(client, { index: Number(match[1]) }); return; }
 
     if (!TALENT_IDS.includes(id)) { this.error(client, 'Unknown talent.'); return; }

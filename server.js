@@ -145,7 +145,7 @@ function authenticate(client, message, mode) {
     // Normalise older saves so missing fields do not crash the simulation.
     character.materials ||= { herb: 0, ore: 0, essence: 0 };
     character.talents ||= { power: 0, haste: 0, vigor: 0, crit: 0, guard: 0, focus: 0 };
-    character.skillRanks ||= [1, 1, 1];
+    character.skillRanks ||= [1, 1, 1, 1];
     character.shopStock ||= [];
 
     if (client.token) sessions.delete(client.token);
