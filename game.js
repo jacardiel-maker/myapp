@@ -150,7 +150,10 @@
     const palette = {
       swordsman: ['#dceeff', '#8fd0ff', '#eaf4ff', '#d2c2a0'],
       archer: ['#b9ffcb', '#b9ffcb', '#8ee46d', '#a8e8ff'],
-      mage: ['#9ce7ff', '#d7b8ff', '#ff9c42', '#e7b8ff']
+      mage: ['#9ce7ff', '#d7b8ff', '#ff9c42', '#e7b8ff'],
+      cleric: ['#ffd75e', '#a8f0cd', '#8ee6ff', '#fff3a8'],
+      rogue: ['#52ffb8', '#8a9ba8', '#a8ff78', '#ff4d6d'],
+      summoner: ['#d7b8ff', '#bf7fff', '#70d6ff', '#e08bff']
     };
     const color = (palette[classId] || palette.swordsman)[index] || '#fff';
     const scale = size / 32;
@@ -227,6 +230,59 @@
         line([[6, 20], [9, 24], [12, 20]]);
         line([[13, 18], [16, 22], [19, 18]]);
         line([[20, 20], [23, 24], [26, 20]]);
+      }
+    } else if (classId === 'cleric') {
+      if (index === 0) { // Holy Smite: sunbeam cross
+        line([[16, 4], [16, 28]]); line([[9, 11], [23, 11]]);
+        line([[13, 7], [16, 4], [19, 7]]);
+        circle(16, 11, 2.5, true);
+      } else if (index === 1) { // Divine Heal: glowing medical/radiant cross
+        ctx.fillRect(13, 8, 6, 16); ctx.fillRect(8, 13, 16, 6);
+        circle(16, 16, 10);
+      } else if (index === 2) { // Aegis Ward: holy shield with aura
+        ctx.beginPath(); ctx.moveTo(16, 5); ctx.lineTo(26, 9); ctx.lineTo(24, 21);
+        ctx.lineTo(16, 28); ctx.lineTo(8, 21); ctx.lineTo(6, 9); ctx.closePath(); ctx.stroke();
+        circle(16, 16, 4, true);
+      } else { // Radiant Nova: 8-pointed starburst
+        for (let a = 0; a < 4; a++) {
+          const ang = a * Math.PI / 4;
+          line([[16 - Math.cos(ang) * 11, 16 - Math.sin(ang) * 11], [16 + Math.cos(ang) * 11, 16 + Math.sin(ang) * 11]]);
+        }
+        circle(16, 16, 3, true);
+      }
+    } else if (classId === 'rogue') {
+      if (index === 0) { // Shadow Strike: dagger with speed slash
+        line([[6, 26], [22, 8]]); line([[18, 7], [24, 8], [23, 14]]);
+        line([[4, 18], [11, 25]]);
+        line([[2, 10], [12, 10]]); line([[4, 14], [14, 14]]);
+      } else if (index === 1) { // Smoke Bomb: smoke cloud
+        circle(12, 16, 7); circle(20, 16, 7); circle(16, 11, 6);
+        circle(16, 21, 4, true);
+      } else if (index === 2) { // Poison Dart: dart with drip
+        line([[6, 24], [23, 7]]); line([[20, 7], [25, 7], [25, 12]]);
+        circle(24, 22, 2.5, true);
+      } else { // Eviscerate: crossed bloody daggers
+        line([[7, 7], [25, 25]]); line([[25, 7], [7, 25]]);
+        line([[6, 11], [11, 6]]); line([[26, 11], [21, 6]]);
+      }
+    } else if (classId === 'summoner') {
+      if (index === 0) { // Arcane Blast: spiraling arcane eye/bolt
+        ctx.beginPath(); ctx.arc(16, 16, 9, 0, 5.2); ctx.stroke();
+        circle(16, 16, 4, true);
+        line([[22, 11], [26, 11], [24, 16]]);
+      } else if (index === 1) { // Summon Familiar: horned spirit crest
+        ctx.beginPath(); ctx.moveTo(8, 9); ctx.lineTo(12, 19); ctx.lineTo(16, 13);
+        ctx.lineTo(20, 19); ctx.lineTo(24, 9); ctx.stroke();
+        circle(16, 22, 4, true);
+      } else if (index === 2) { // Spirit Ward: ethereal diamond
+        ctx.beginPath(); ctx.moveTo(16, 5); ctx.lineTo(26, 16); ctx.lineTo(16, 27); ctx.lineTo(6, 16); ctx.closePath(); ctx.stroke();
+        circle(16, 16, 3, true);
+      } else { // Soul Nova: dark necrotic core with tendrils
+        circle(16, 16, 6, true);
+        for (let a = 0; a < 6; a++) {
+          const ang = a * Math.PI / 3 + time * 2;
+          line([[16 + Math.cos(ang) * 7, 16 + Math.sin(ang) * 7], [16 + Math.cos(ang) * 13, 16 + Math.sin(ang) * 13]]);
+        }
       }
     } else if (index === 0) {
       for (let a = 0; a < 3; a++) {
@@ -2516,14 +2572,16 @@
       if (this.attackCd > 0) return;
       game.acquireAutoLockTarget();
       this.aim = game.getAimAngle(this);
-      this.attackCd = this.classId === 'archer' ? 0.31 : this.classId === 'mage' ? 0.55 : 0.45;
+      this.attackCd = this.classId === 'rogue' ? 0.28 : this.classId === 'archer' ? 0.31 : this.classId === 'cleric' ? 0.42 : this.classId === 'summoner' ? 0.48 : this.classId === 'mage' ? 0.55 : 0.45;
       this.attackAnim = 0.35;
       const crit = Math.random() < this.critChance;
       const damage = this.finalStats.attack * (crit ? 1.8 : 1);
-      if (this.classId === 'swordsman') {
+      if (this.classId === 'swordsman' || this.classId === 'cleric' || this.classId === 'rogue') {
         game.audio.sfx('swing');
+        const slashColor = this.classId === 'cleric' ? '#ffd75e' : this.classId === 'rogue' ? '#52ffb8' : '#eaf4ff';
+        const slashElem = this.classId === 'cleric' ? 'holy' : 'steel';
         game.effects.push(new Effect('slash', this.x, this.y - 14, {
-          color: '#eaf4ff', element: 'steel', angle: this.aim, radius: 26, life: 0.20
+          color: slashColor, element: slashElem, angle: this.aim, radius: this.classId === 'cleric' ? 30 : 26, life: 0.20
         }));
         for (const e of game.enemies) {
           if (!e.alive) continue;
@@ -2531,7 +2589,7 @@
           const a = angleTo(this, e);
           const diff = Math.abs(Math.atan2(Math.sin(a - this.aim), Math.cos(a - this.aim)));
           if (d < this.finalStats.range + e.radius && diff < 1.2) {
-            game.damageEnemy(e, damage, this, crit, 'slash');
+            game.damageEnemy(e, damage, this, crit, slashElem);
           }
         }
       } else if (this.classId === 'archer') {
@@ -2542,6 +2600,15 @@
           vx: Math.cos(this.aim) * 540,
           vy: Math.sin(this.aim) * 540,
           damage, owner: this, crit, kind: 'arrow', radius: 5, life: 2.2
+        });
+      } else if (this.classId === 'summoner') {
+        game.audio.sfx('magic');
+        game.spawnProjectile({
+          x: this.x + Math.cos(this.aim) * 14,
+          y: this.y - 10 + Math.sin(this.aim) * 14,
+          vx: Math.cos(this.aim) * 440,
+          vy: Math.sin(this.aim) * 440,
+          damage, owner: this, crit, kind: 'arcane', aoe: 35, radius: 7, life: 2.2
         });
       } else {
         game.audio.sfx('magic');
@@ -2578,7 +2645,13 @@
         ? ['#dceeff', '#8fd0ff', '#eaf4ff', '#d2c2a0']
         : this.classId === 'archer'
           ? ['#b9ffcb', '#b9ffcb', '#8ee46d', '#a8e8ff']
-          : ['#9ce7ff', '#d7b8ff', '#ff9c42', '#e7b8ff'];
+          : this.classId === 'cleric'
+            ? ['#ffd75e', '#a8f0cd', '#8ee6ff', '#fff3a8']
+            : this.classId === 'rogue'
+              ? ['#52ffb8', '#8a9ba8', '#a8ff78', '#ff4d6d']
+              : this.classId === 'summoner'
+                ? ['#d7b8ff', '#bf7fff', '#70d6ff', '#e08bff']
+                : ['#9ce7ff', '#d7b8ff', '#ff9c42', '#e7b8ff'];
       this.playSkillAnim(game, def, fxColors[index]);
       game.log(`${this.name} used ${def.name}!`, fxColors[index]);
       this.aim = game.getAimAngle(this);
@@ -2664,7 +2737,81 @@
             game.effects.push(new Effect('line', x, y - 45, { color: '#b9ffcb', x2: x, y2: y + 8, life: 0.32, size: 2 }));
           }
         }
-      } else {
+      } else if (this.classId === 'cleric') {
+        if (index === 0) { // Holy Smite
+          const target = game.getAimPoint();
+          game.addSkillRune(target.x, target.y, index, fxColors[index], aim, true);
+          game.effects.push(new Effect('line', target.x, target.y - 120, { color: '#ffd75e', x2: target.x, y2: target.y + 10, life: 0.32, size: 8 }));
+          game.effects.push(new Effect('ring', target.x, target.y, { color: '#ffd75e', radius: 10, endRadius: 65, life: 0.4 }));
+          game.areaDamage(target.x, target.y, 65, baseDamage * 1.7, this, 'holy');
+          game.shake = Math.max(game.shake, 4);
+        } else if (index === 1) { // Divine Heal
+          const healAmt = Math.round(65 * power);
+          this.hp = clamp(this.hp + healAmt, 1, this.maxHp);
+          game.addFloater(this.x, this.y - 42, `+${healAmt}`, '#a8f0cd', 14);
+          game.effects.push(new Effect('ring', this.x, this.y - 8, { color: '#a8f0cd', radius: 10, endRadius: 50, life: 0.4 }));
+        } else if (index === 2) { // Aegis Ward
+          this.shieldTime = 4;
+          game.effects.push(new Effect('ring', this.x, this.y - 8, { color: '#8ee6ff', radius: 14, endRadius: 45, life: 0.5 }));
+          game.addFloater(this.x, this.y - 42, 'Aegis Ward!', '#8ee6ff', 12);
+        } else { // Radiant Nova
+          game.areaDamage(this.x, this.y, 125, baseDamage * 2.2, this, 'holy');
+          const healAmt = Math.round(35 * power);
+          this.hp = clamp(this.hp + healAmt, 1, this.maxHp);
+          game.addFloater(this.x, this.y - 42, `+${healAmt}`, '#ffd75e', 14);
+          game.effects.push(new Effect('ring', this.x, this.y - 8, { color: '#fff3a8', radius: 15, endRadius: 125, life: 0.5 }));
+          game.shake = Math.max(game.shake, 5);
+        }
+      } else if (this.classId === 'rogue') {
+        if (index === 0) { // Shadow Strike
+          const target = game.currentLockTarget();
+          let tx = target ? target.x - Math.cos(target.facing || 0) * 28 : this.x + Math.cos(aim) * 90;
+          let ty = target ? target.y - Math.sin(target.facing || 0) * 28 : this.y + Math.sin(aim) * 90;
+          game.effects.push(new Effect('line', this.x, this.y - 8, { color: '#52ffb8', x2: tx, y2: ty - 8, life: 0.22, size: 4 }));
+          this.x = tx; this.y = ty;
+          game.effects.push(new Effect('slash', tx, ty - 10, { element: 'steel', angle: aim, radius: 34, life: 0.24 }));
+          game.areaDamage(tx, ty, 60, baseDamage * 1.8 * 1.5, this, 'slash');
+          game.shake = Math.max(game.shake, 4);
+        } else if (index === 1) { // Smoke Bomb
+          this.invuln = 2.5;
+          game.effects.push(new Effect('ring', this.x, this.y - 8, { color: '#8a9ba8', radius: 10, endRadius: 80, life: 0.6 }));
+          game.areaDamage(this.x, this.y, 80, baseDamage * 0.5, this, 'smoke', { slow: 0.5 });
+          game.addFloater(this.x, this.y - 42, 'Vanish!', '#52ffb8', 12);
+        } else if (index === 2) { // Poison Dart
+          game.spawnProjectile({
+            x: this.x + Math.cos(aim) * 14, y: this.y - 10 + Math.sin(aim) * 14,
+            vx: Math.cos(aim) * 620, vy: Math.sin(aim) * 620,
+            damage: baseDamage * 1.0, owner: this, kind: 'poison', poison: 10 * power, radius: 5, life: 2.0
+          });
+        } else { // Eviscerate
+          const tx = this.x + Math.cos(aim) * 35;
+          const ty = this.y + Math.sin(aim) * 35;
+          game.effects.push(new Effect('slash', tx, ty - 8, { element: 'steel', angle: aim, radius: 44, life: 0.32 }));
+          game.areaDamage(tx, ty, 75, baseDamage * 3.0, this, 'slash');
+          game.shake = Math.max(game.shake, 7);
+        }
+      } else if (this.classId === 'summoner') {
+        if (index === 0) { // Arcane Blast
+          game.spawnProjectile({
+            x: this.x + Math.cos(aim) * 14, y: this.y - 10 + Math.sin(aim) * 14,
+            vx: Math.cos(aim) * 480, vy: Math.sin(aim) * 480,
+            damage: baseDamage * 1.3, owner: this, kind: 'arcane', aoe: 40, radius: 7, life: 2.2
+          });
+        } else if (index === 1) { // Summon Familiar
+          game.areaDamage(this.x, this.y, 90, baseDamage * 1.5, this, 'summon');
+          game.effects.push(new Effect('ring', this.x, this.y - 8, { color: '#bf7fff', radius: 12, endRadius: 90, life: 0.5 }));
+          game.addFloater(this.x, this.y - 42, 'Familiar Risen!', '#e08bff', 13);
+        } else if (index === 2) { // Spirit Ward
+          this.shieldTime = 5;
+          this.mp = Math.min(this.maxMp, this.mp + 25);
+          game.effects.push(new Effect('ring', this.x, this.y - 8, { color: '#70d6ff', radius: 10, endRadius: 45, life: 0.4 }));
+          game.addFloater(this.x, this.y - 42, 'Spirit Ward!', '#70d6ff', 12);
+        } else { // Soul Nova
+          game.areaDamage(this.x, this.y, 135, baseDamage * 2.6, this, 'shadow');
+          game.effects.push(new Effect('ring', this.x, this.y - 8, { color: '#e08bff', radius: 15, endRadius: 135, life: 0.55 }));
+          game.shake = Math.max(game.shake, 6);
+        }
+      } else { // Mage
         if (index === 0) { // Ice Nova
           game.areaDamage(this.x, this.y, 135, baseDamage * 0.85, this, 'ice', { slow: 0.45 });
           game.effects.push(new Effect('slash', this.x, this.y - 10, {
@@ -4778,8 +4925,13 @@
     skillNeedsAim(index) {
       if (!this.player) return false;
       const classId = this.player.classId;
-      return (classId === 'swordsman' && index === 0) ||
-        (classId === 'archer') || (classId === 'mage' && index > 0);
+      if (classId === 'swordsman') return index === 0;
+      if (classId === 'archer') return true;
+      if (classId === 'mage') return index > 0;
+      if (classId === 'cleric') return index === 0;
+      if (classId === 'rogue') return index === 0 || index === 2 || index === 3;
+      if (classId === 'summoner') return index === 0;
+      return false;
     }
 
     activateSkill(index) {
@@ -7597,6 +7749,7 @@
     }
 
     drawLeaderboard() {
+      if (this.input.mobile) return; // Hide compact leaderboard widget on mobile so it doesn't overlap touch buttons
       const ctx = this.ctx;
       const x = VIEW_W - 176;
       const y = 178;
@@ -7624,7 +7777,7 @@
       const ctx = this.ctx;
       if (this.chatMinimized) {
         const x = 12;
-        const y = this.input.mobile ? 118 : VIEW_H - 38;
+        const y = this.input.mobile ? 72 : VIEW_H - 38;
         const w = 88;
         const h = 26;
         this.button(x, y, w, h, 'CHAT +', 'toggleChat', { fontSize: 10 });
@@ -7634,7 +7787,7 @@
       const w = 310;
       const h = 126;
       const x = 12;
-      const y = this.input.mobile ? 118 : VIEW_H - 138;
+      const y = this.input.mobile ? 182 : VIEW_H - 138;
       ctx.save();
       ctx.shadowColor = 'rgba(0,0,0,0.38)';
       ctx.shadowBlur = 9;
@@ -7933,71 +8086,106 @@
       ids.forEach((id, i) => {
         const row = Math.floor(i / 3);
         const col = i % 3;
-        const x = 62 + col * 295;
-        const y = 98 + row * 168;
-        const w = 275;
-        const h = 158;
+        const x = 50 + col * 292;
+        const y = 92 + row * 168;
+        const w = 276;
+        const h = 156;
         const data = CLASS_DATA[id];
         const selected = this.selectedClass === id;
-        ctx.fillStyle = selected ? 'rgba(40,62,100,0.96)' : 'rgba(14,20,36,0.92)';
+        ctx.fillStyle = selected ? 'rgba(32,54,92,0.98)' : 'rgba(12,18,34,0.94)';
         ctx.fillRect(x, y, w, h);
-        ctx.strokeStyle = selected ? '#ffd75e' : '#58668a';
-        ctx.lineWidth = selected ? 3 : 1;
-        ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
+        ctx.strokeStyle = selected ? '#ffd75e' : '#4a577a';
+        ctx.lineWidth = selected ? 2.5 : 1;
+        ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
 
-        const portraitX = x + 12;
-        const portraitY = y + 24;
-        const aura = ctx.createRadialGradient(x + w / 2, portraitY + 53, 5, x + w / 2, portraitY + 53, 58);
+        // Left Column: Portrait box + Class name + Role tag
+        const portraitX = x + 10;
+        const portraitY = y + 10;
+        const portraitW = 72;
+        const portraitH = 72;
+        ctx.fillStyle = '#0a0f1d';
+        ctx.fillRect(portraitX, portraitY, portraitW, portraitH);
+        const aura = ctx.createRadialGradient(portraitX + portraitW / 2, portraitY + portraitH / 2, 4, portraitX + portraitW / 2, portraitY + portraitH / 2, 44);
         aura.addColorStop(0, `${data.color}55`);
-        aura.addColorStop(1, '#0b1020');
+        aura.addColorStop(1, '#0a0f1d');
         ctx.fillStyle = aura;
-        ctx.fillRect(portraitX, portraitY, 110, 110);
+        ctx.fillRect(portraitX, portraitY, portraitW, portraitH);
         ctx.strokeStyle = `${data.color}88`;
         ctx.lineWidth = 1;
-        ctx.strokeRect(portraitX + 1.5, portraitY + 1.5, 107, 107);
-        for (let mote = 0; mote < 5; mote++) {
-          const mx = portraitX + 10 + ((mote * 29 + Math.floor(this.time * 5)) % 90);
-          const my = portraitY + 10 + ((mote * 37 + id.length * 9) % 86);
-          ctx.globalAlpha = 0.45 + (Math.sin(this.time * 3 + mote * 2) + 1) * 0.22;
+        ctx.strokeRect(portraitX + 0.5, portraitY + 0.5, portraitW - 1, portraitH - 1);
+
+        // Animated motes
+        for (let mote = 0; mote < 4; mote++) {
+          const mx = portraitX + 8 + ((mote * 23 + Math.floor(this.time * 6)) % 56);
+          const my = portraitY + 8 + ((mote * 31 + id.length * 7) % 56);
+          ctx.globalAlpha = 0.4 + (Math.sin(this.time * 3 + mote * 2) + 1) * 0.2;
           ctx.fillStyle = data.color;
-          ctx.fillRect(mx, my, mote % 2 ? 2 : 3, mote % 2 ? 2 : 3);
+          ctx.fillRect(mx, my, 2, 2);
         }
         ctx.globalAlpha = 1;
-        const colors = STARTER_SPRITE_COLORS[id];
+
+        // Player frame inside portrait
+        const colors = STARTER_SPRITE_COLORS[id] || { weapon: data.color, armor: '#4a5580' };
         const equipment = {
           weapon: { spriteColor: colors.weapon },
           armor: { spriteColor: colors.armor }
         };
-        const running = data.speed >= 130;
         const frame = playerGaitFrame(this.time, data.speed);
-        const sprite = playerSprite(id, frame, false, equipment, { running });
-        drawPlayerFrame(ctx, sprite, x + w / 2, portraitY + 104, frame, running, 1, 6);
+        const sprite = playerSprite(id, frame, false, equipment, { running: false });
+        drawPlayerFrame(ctx, sprite, portraitX + portraitW / 2, portraitY + 62, frame, false, 1, 4.2);
 
-        ctx.font = 'bold 19px monospace';
+        // Class Name under portrait
+        ctx.font = 'bold 13px monospace';
+        ctx.textAlign = 'center';
         ctx.fillStyle = data.color;
-        ctx.fillText(data.name, x + w / 2, y + 160);
-        ctx.font = '11px monospace';
+        ctx.fillText(data.name, portraitX + portraitW / 2, y + 102);
+
+        // Role tag
+        ctx.font = '9px monospace';
+        ctx.fillStyle = '#9fb0cd';
+        const roleTag = id === 'swordsman' ? 'Tank / Melee'
+          : id === 'archer' ? 'Ranged Kiter'
+          : id === 'mage' ? 'AoE Caster'
+          : id === 'cleric' ? 'Holy Healer'
+          : id === 'rogue' ? 'Stealth Burst' : 'Occult Summoner';
+        ctx.fillText(roleTag, portraitX + portraitW / 2, y + 118);
+
+        // HP/MP info
+        ctx.font = '9px monospace';
+        ctx.fillStyle = '#6e7f9e';
+        ctx.fillText(`HP ${data.maxHp}  MP ${data.mana || 80}`, portraitX + portraitW / 2, y + 134);
+
+        // Right Column: Blurb & Stats bars
+        ctx.textAlign = 'left';
+        ctx.font = '10px monospace';
         ctx.fillStyle = '#c8d3ea';
-        wrappedText(ctx, data.blurb, x + 18, y + 182, w - 36, 14, 2);
+        wrappedText(ctx, data.blurb, x + 90, y + 18, 176, 13, 2);
 
         const stats = [
-          ['HP', data.maxHp],
-          ['ATK', data.attack],
-          ['SPD', data.speed],
-          ['RNG', data.range]
+          ['HP', data.maxHp, 200],
+          ['ATK', data.attack, 28],
+          ['SPD', data.speed, 160],
+          ['RNG', data.range, 300]
         ];
         stats.forEach((s, k) => {
-          const sy = y + 222 + k * 22;
-          ctx.font = 'bold 11px monospace';
+          const sy = y + 54 + k * 18;
+          ctx.font = 'bold 9px monospace';
           ctx.textAlign = 'left';
           ctx.fillStyle = '#9fb0cd';
-          ctx.fillText(s[0], x + 22, sy);
-          drawBar(ctx, x + 62, sy - 10, 130, 11, clamp(s[1] / 300, 0.1, 1), data.color);
+          ctx.fillText(s[0], x + 90, sy + 7);
+          drawBar(ctx, x + 116, sy, 110, 9, clamp(s[1] / s[2], 0.1, 1), data.color);
           ctx.textAlign = 'right';
           ctx.fillStyle = '#fff';
-          ctx.fillText(String(s[1]), x + 254, sy);
-          ctx.textAlign = 'center';
+          ctx.font = '9px monospace';
+          ctx.fillText(String(s[1]), x + 266, sy + 7);
         });
+
+        // Skill list preview
+        ctx.font = '9px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillStyle = '#8a9bb8';
+        const skillsTeaser = SKILLS[id].map(s => s.name.split(' ')[0]).join(' • ');
+        ctx.fillText(`Skills: ${skillsTeaser}`, x + 90, y + 142);
 
         this.clickRegions.push({ x, y, w, h, action: 'select:' + id });
       });

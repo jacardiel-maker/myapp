@@ -1746,7 +1746,13 @@ export class World {
       ? ['#dceeff', '#8fd0ff', '#eaf4ff', '#d2c2a0']
       : classId === 'archer'
         ? ['#b9ffcb', '#b9ffcb', '#8ee46d', '#a8e8ff']
-        : ['#9ce7ff', '#d7b8ff', '#ff9c42', '#e7b8ff'];
+        : classId === 'cleric'
+          ? ['#ffd75e', '#a8f0cd', '#8ee6ff', '#fff3a8']
+          : classId === 'rogue'
+            ? ['#52ffb8', '#8a9ba8', '#a8ff78', '#ff4d6d']
+            : classId === 'summoner'
+              ? ['#d7b8ff', '#bf7fff', '#70d6ff', '#e08bff']
+              : ['#9ce7ff', '#d7b8ff', '#ff9c42', '#e7b8ff'];
     const fxColor = colors[index];
 
     client.skillAnim = 0.55;
@@ -1845,7 +1851,111 @@ export class World {
         fx.ty = targetY;
         this.areaDamage(room, targetX, targetY, 112, baseDamage * 1.5, client, 'arrowRain');
       }
-    } else {
+    } else if (classId === 'cleric') {
+      if (index === 0) { // Holy Smite
+        const reqX = Number(message && message.aimX);
+        const reqY = Number(message && message.aimY);
+        const hasPt = Number.isFinite(reqX) && Number.isFinite(reqY);
+        let tx = lockedTarget ? lockedTarget.x : hasPt ? reqX : ox + cos * 150;
+        let ty = lockedTarget ? lockedTarget.y - 8 : hasPt ? reqY : oy + sin * 150;
+        tx = clamp(tx, 40, room.w * TILE - 40);
+        ty = clamp(ty, 40, room.h * TILE - 40);
+        fx.tx = tx;
+        fx.ty = ty;
+        this.areaDamage(room, tx, ty, 65, baseDamage * 1.7, client, 'holy');
+        this.sfxRoom(room, 'magic');
+      } else if (index === 1) { // Divine Heal
+        const healAmt = Math.round((def.healSelf || 65) * power);
+        client.hp = clamp(client.hp + healAmt, 1, stats.maxHp);
+        this.eventRoom(room, 'floater', { x: client.x, y: client.y - 42, text: `+${healAmt}`, color: '#8ee6a8' });
+        // Heal party members in room
+        for (const other of room.players) {
+          if (other !== client && client.character.party && other.character.party) {
+            const partyHeal = Math.round((def.healParty || 45) * power);
+            other.hp = clamp(other.hp + partyHeal, 1, this.statsFor(other).maxHp);
+            this.eventRoom(room, 'floater', { x: other.x, y: other.y - 42, text: `+${partyHeal}`, color: '#8ee6a8' });
+          }
+        }
+        this.sfxRoom(room, 'pickup');
+      } else if (index === 2) { // Aegis Ward
+        client.shieldTime = 4;
+        client.stamina = Math.min(100, client.stamina + 25);
+        this.eventRoom(room, 'floater', { x: client.x, y: client.y - 42, text: 'Aegis Ward!', color: '#ffd75e' });
+      } else { // Radiant Nova
+        this.areaDamage(room, client.x, client.y, 125, baseDamage * 2.2, client, 'holy');
+        const healAmt = Math.round((def.healParty || 35) * power);
+        client.hp = clamp(client.hp + healAmt, 1, stats.maxHp);
+        this.eventRoom(room, 'floater', { x: client.x, y: client.y - 42, text: `+${healAmt}`, color: '#ffd75e' });
+        for (const other of room.players) {
+          if (other !== client && dist(client, other) < 125) {
+            other.hp = clamp(other.hp + healAmt, 1, this.statsFor(other).maxHp);
+            this.eventRoom(room, 'floater', { x: other.x, y: other.y - 42, text: `+${healAmt}`, color: '#ffd75e' });
+          }
+        }
+      }
+    } else if (classId === 'rogue') {
+      if (index === 0) { // Shadow Strike (teleport behind target)
+        let tx = ox + cos * 90;
+        let ty = oy + sin * 90;
+        if (lockedTarget) {
+          tx = lockedTarget.x - Math.cos(lockedTarget.facing || 0) * 28;
+          ty = lockedTarget.y - Math.sin(lockedTarget.facing || 0) * 28;
+        }
+        tx = clamp(tx, 40, room.w * TILE - 40);
+        ty = clamp(ty, 40, room.h * TILE - 40);
+        client.x = tx;
+        client.y = ty;
+        fx.tx = tx;
+        fx.ty = ty;
+        const critDmg = baseDamage * 1.8 * (Math.random() < stats.crit + 0.35 ? 1.8 : 1);
+        this.areaDamage(room, tx, ty, 60, critDmg, client, 'slash');
+        this.sfxRoom(room, 'swing');
+      } else if (index === 1) { // Smoke Bomb
+        client.invuln = 2.5;
+        this.areaDamage(room, client.x, client.y, 80, baseDamage * 0.5, client, 'smoke', { slow: 0.5 });
+        this.eventRoom(room, 'floater', { x: client.x, y: client.y - 42, text: 'Vanish!', color: '#52ffb8' });
+      } else if (index === 2) { // Poison Dart
+        this.spawnProjectile(room, {
+          x: client.x + cos * 14,
+          y: client.y - 10 + sin * 14,
+          vx: cos * 620,
+          vy: sin * 620,
+          damage: baseDamage * 1.0,
+          ownerId: client.id,
+          kind: 'poison', radius: 5, life: 2.0,
+          poison: 10 * power
+        });
+        this.sfxRoom(room, 'arrow');
+      } else { // Eviscerate
+        const critDmg = baseDamage * 3.0 * (Math.random() < stats.crit + 0.4 ? 1.8 : 1);
+        this.areaDamage(room, ox + cos * 35, oy + sin * 35, 75, critDmg, client, 'slash');
+        this.sfxRoom(room, 'swing');
+      }
+    } else if (classId === 'summoner') {
+      if (index === 0) { // Arcane Blast
+        this.spawnProjectile(room, {
+          x: client.x + cos * 14,
+          y: client.y - 10 + sin * 14,
+          vx: cos * 480,
+          vy: sin * 480,
+          damage: baseDamage * 1.3,
+          ownerId: client.id,
+          kind: 'arcane', aoe: 40, radius: 7, life: 2.2
+        });
+        this.sfxRoom(room, 'magic');
+      } else if (index === 1) { // Summon Familiar
+        this.areaDamage(room, client.x, client.y, 90, baseDamage * 1.5, client, 'summon');
+        this.eventRoom(room, 'floater', { x: client.x, y: client.y - 42, text: 'Familiar Risen!', color: '#e08bff' });
+        this.sfxRoom(room, 'magic');
+      } else if (index === 2) { // Spirit Ward
+        client.shieldTime = 5;
+        client.mp = Math.min(stats.maxMp, client.mp + 25);
+        this.eventRoom(room, 'floater', { x: client.x, y: client.y - 42, text: 'Spirit Ward!', color: '#70d6ff' });
+      } else { // Soul Nova
+        this.areaDamage(room, client.x, client.y, 135, baseDamage * 2.6, client, 'shadow');
+        this.sfxRoom(room, 'magic');
+      }
+    } else { // Mage
       if (index === 0) {
         this.areaDamage(room, client.x, client.y, 135, baseDamage * 0.85, client, 'ice', { slow: 0.45 });
       } else if (index === 1) {
