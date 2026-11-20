@@ -5793,10 +5793,10 @@
 
     drawChat() {
       const ctx = this.ctx;
-      const x = 12;
-      const y = VIEW_H - 138;
       const w = 350;
       const h = 126;
+      const x = this.input.mobile ? (VIEW_W - w) / 2 : 12;
+      const y = this.input.mobile ? 118 : VIEW_H - 138;
       ctx.fillStyle = 'rgba(6,10,20,0.82)';
       ctx.fillRect(x, y, w, h);
       ctx.strokeStyle = '#4b5b78';
