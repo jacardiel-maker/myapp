@@ -201,6 +201,7 @@ function makeItem(name, slot, rarity, stats = {}, extra = {}) {
     },
     spriteColor: extra.spriteColor || RARITY[rarityKey].color,
     icon: extra.icon || String(name || 'I')[0],
+    art: extra.art || null,
     price: Math.max(1, Math.floor(extra.price || Math.round(25 * RARITY[rarityKey].mult))),
     heal: Math.max(0, Math.floor(extra.heal || 0)),
     desc: String(extra.desc || '').slice(0, 200),
@@ -208,6 +209,48 @@ function makeItem(name, slot, rarity, stats = {}, extra = {}) {
     effect: extra.effect || null,
     color: extra.color || null
   };
+}
+
+// One signature epic per role. The art key must match the client so images
+// survive cloud saves, mail, auctions and shop purchases.
+const ROLE_ITEM_ART = {
+  swordsman: 'roleSword',
+  archer: 'roleBow',
+  mage: 'roleStaff'
+};
+
+const ROLE_ITEM_DEFS = {
+  swordsman: {
+    name: 'Dawnfang Blade', art: ROLE_ITEM_ART.swordsman, icon: 'S',
+    stats: { attack: 18, hp: 12, speed: 4 },
+    effect: 'flame', spriteColor: '#eef5ff', color: '#ffd27a', price: 420,
+    desc: 'Swordsman relic: a sunlit blade that burns on impact.'
+  },
+  archer: {
+    name: 'Windsong Bow', art: ROLE_ITEM_ART.archer, icon: 'B',
+    stats: { attack: 14, speed: 12, range: 28 },
+    effect: 'frost', spriteColor: '#9ce7c4', color: '#8ee6ff', price: 420,
+    desc: 'Archer relic: a living bow that hums with the north wind.'
+  },
+  mage: {
+    name: 'Astral Flame Staff', art: ROLE_ITEM_ART.mage, icon: 'T',
+    stats: { attack: 16, mana: 24, range: 18 },
+    effect: 'void', spriteColor: '#c9a6ff', color: '#ffb15c', price: 420,
+    desc: 'Mage relic: focuses starlight into an eternal flame.'
+  }
+};
+
+function roleItem(classId) {
+  const def = ROLE_ITEM_DEFS[classId] || ROLE_ITEM_DEFS.swordsman;
+  return makeItem(def.name, 'weapon', 'epic', def.stats, {
+    art: def.art,
+    icon: def.icon,
+    spriteColor: def.spriteColor,
+    color: def.color,
+    effect: def.effect,
+    price: def.price,
+    desc: def.desc
+  });
 }
 
 // Accept loosely shaped items from old saves / client messages and tidy them.
@@ -222,19 +265,21 @@ function normalizeItem(raw) {
     desc: raw.desc,
     enchant: raw.enchant,
     effect: raw.effect,
-    color: raw.color
+    color: raw.color,
+    art: raw.art
   });
 }
 
 function starterItems(classId) {
   const weapon = classId === 'swordsman'
-    ? makeItem('Iron Sword', 'weapon', 'common', { attack: 5 }, { spriteColor: '#d4e0ec', desc: 'A trusty blade.' })
+    ? makeItem('Iron Sword', 'weapon', 'common', { attack: 5 }, { art: 'sword', spriteColor: '#d4e0ec', desc: 'A trusty blade.' })
     : classId === 'archer'
-      ? makeItem('Short Bow', 'weapon', 'common', { attack: 4 }, { spriteColor: '#9c6a3d', desc: 'Light and quick.' })
-      : makeItem('Oak Staff', 'weapon', 'common', { attack: 6 }, { spriteColor: '#b37b45', desc: 'Channels fire magic.' });
+      ? makeItem('Short Bow', 'weapon', 'common', { attack: 4 }, { art: 'bow', spriteColor: '#9c6a3d', desc: 'Light and quick.' })
+      : makeItem('Oak Staff', 'weapon', 'common', { attack: 6 }, { art: 'staff', spriteColor: '#b37b45', desc: 'Channels fire magic.' });
 
   const armorColor = classId === 'mage' ? '#8b63c8' : classId === 'archer' ? '#5c9b66' : '#7896c4';
   const armor = makeItem('Traveler Gear', 'armor', 'common', { hp: 10, defense: 2 }, {
+    art: 'armor',
     spriteColor: armorColor,
     desc: 'Basic adventurer clothes.'
   });
@@ -242,8 +287,8 @@ function starterItems(classId) {
   return {
     equipment: { weapon, armor },
     inventory: [
-      makeItem('Health Potion', 'consumable', 'common', {}, { icon: 'P', heal: 55, price: 20, desc: 'Restores 55 HP.' }),
-      makeItem('Health Potion', 'consumable', 'common', {}, { icon: 'P', heal: 55, price: 20, desc: 'Restores 55 HP.' })
+      makeItem('Health Potion', 'consumable', 'common', {}, { art: 'potion', icon: 'P', heal: 55, price: 20, desc: 'Restores 55 HP.' }),
+      makeItem('Health Potion', 'consumable', 'common', {}, { art: 'potion', icon: 'P', heal: 55, price: 20, desc: 'Restores 55 HP.' })
     ]
   };
 }
@@ -255,6 +300,7 @@ function randomShopItem(index) {
 
   if (index % 3 === 2) {
     return makeItem('Greater Potion', 'consumable', rarity, {}, {
+      art: 'potion',
       icon: 'P',
       heal: Math.round(90 * mult),
       price: Math.round(35 * mult),
@@ -266,19 +312,32 @@ function randomShopItem(index) {
     return makeItem(
       rarity === 'epic' ? 'Runed Edge' : rarity === 'rare' ? 'Steelervoir' : 'Practice Weapon',
       'weapon', rarity, { attack: Math.round(6 * mult) },
-      { desc: 'Increases attack power.' }
+      { art: 'sword', desc: 'Increases attack power.' }
     );
   }
 
   return makeItem(
     rarity === 'epic' ? 'Dragonhide' : rarity === 'rare' ? 'Knight Mail' : 'Padded Vest',
     'armor', rarity, { hp: Math.round(16 * mult), defense: Math.round(3 * mult) },
-    { desc: 'Increases HP and defense.' }
+    { art: 'armor', desc: 'Increases HP and defense.' }
   );
 }
 
 function makeShopStock() {
-  return Array.from({ length: 6 }, (_, i) => randomShopItem(i));
+  return [
+    randomShopItem(0),
+    randomShopItem(1),
+    randomShopItem(2),
+    roleItem('swordsman'),
+    roleItem('archer'),
+    roleItem('mage')
+  ];
+}
+
+function randomMobDropItem() {
+  const roleIds = Object.keys(ROLE_ITEM_DEFS);
+  if (Math.random() < 0.22) return roleItem(roleIds[Math.floor(Math.random() * roleIds.length)]);
+  return randomShopItem(randInt(0, 5));
 }
 
 function freshQuest() {
@@ -1227,8 +1286,14 @@ export class World {
     if (enemy.type === 'goblin' && Math.random() < 0.22) this.spawnPickup(room, 'herb', enemy.x, enemy.y, 1);
     if (enemy.type === 'goblin' && Math.random() < 0.25) this.spawnPickup(room, 'material', enemy.x, enemy.y, 1, null, 'ore');
     if (Math.random() < 0.08) this.spawnPickup(room, 'material', enemy.x, enemy.y, 1, null, 'essence');
-    if (enemy.type !== 'boss' && Math.random() < 0.07) {
-      this.spawnPickup(room, 'item', enemy.x, enemy.y, 1, randomShopItem(randInt(0, 5)));
+    if (enemy.type !== 'boss' && Math.random() < 0.12) {
+      const item = randomMobDropItem();
+      this.spawnPickup(room, 'item', enemy.x + rand(-6, 6), enemy.y, 1, item);
+      this.eventRoom(room, 'fx', {
+        visual: 'itemDrop', x: enemy.x, y: enemy.y,
+        name: item.name, rarity: item.rarity,
+        color: RARITY[item.rarity] ? RARITY[item.rarity].color : '#c9a6ff'
+      });
     }
 
     if (enemy.type === 'boss') this.defeatBoss(room, enemy, source);
@@ -2068,7 +2133,13 @@ export class World {
   }
 
   emitShopList(client) {
-    const items = (client.character.shopStock || []).map(item => normalizeItem(item)).filter(Boolean);
+    let items = (client.character.shopStock || []).map(item => normalizeItem(item)).filter(Boolean);
+    // Older cloud saves predate the role relics; refresh the last three slots.
+    if (!items.some(item => item.art && String(item.art).startsWith('role'))) {
+      const fresh = makeShopStock();
+      items = items.slice(0, 3).concat(fresh.slice(3));
+      client.character.shopStock = items;
+    }
     this.event(client, 'shopList', { items });
   }
 

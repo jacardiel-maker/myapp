@@ -261,7 +261,8 @@
     const weaponEffect = equipment.weapon && equipment.weapon.effect;
     const enchant = equipment.weapon && equipment.weapon.enchant ? equipment.weapon.enchant : 0;
     const spec = effects.spec || '';
-    const key = `player_${classId}_${frame}_${attacking ? 1 : 0}_${weaponColor || ''}_${armorColor || ''}_${weaponEffect || ''}_${enchant}_${spec}`;
+    const casting = !!effects.casting;
+    const key = `player_${classId}_${frame}_${attacking ? 1 : 0}_${casting ? 1 : 0}_${weaponColor || ''}_${armorColor || ''}_${weaponEffect || ''}_${enchant}_${spec}`;
     return cachedSprite(key, () => {
       const p = CLASS_PALETTE[classId];
       const g = emptyGrid();
@@ -313,9 +314,15 @@
         setPx(g, 8, 0, '#d7e5ff');
       }
 
-      // Weapons. The attack frames move the weapon to suggest a swing/cast.
+      // Weapons. Casting raises the focus; attack frames show a swing/shot.
       if (classId === 'swordsman') {
-        if (attacking && frame === 2) {
+        if (casting) {
+          setRect(g, 12, 2, 1, 10, weapon);        // blade held upright
+          setRect(g, 11, 10, 3, 1, '#6b4a2f');
+          setPx(g, 12, 1, '#ffffff');
+          setPx(g, 13, 4, trim);
+          setPx(g, 14, 3, trim);
+        } else if (attacking && frame === 2) {
           setRect(g, 9, 8, 6, 1, weapon);          // horizontal slash
           setPx(g, 15, 8, '#ffffff');
           setRect(g, 8, 7, 1, 3, '#6b4a2f');
@@ -326,7 +333,7 @@
           setRect(g, 12, 5, 1, 8, weapon);         // resting sword
           setRect(g, 11, 11, 3, 1, '#6b4a2f');
         }
-        setPx(g, 12, 4, '#ffffff');
+        if (!casting) setPx(g, 12, 4, '#ffffff');
       } else if (classId === 'archer') {
         setPx(g, 12, 4, weapon);
         setPx(g, 13, 5, weapon);
@@ -334,15 +341,26 @@
         setPx(g, 13, 9, weapon);
         setPx(g, 12, 10, weapon);
         setPx(g, 14, 7, '#e8e0c0');                // bow string
-        if (attacking && frame >= 1) {
+        if (casting) {
+          setPx(g, 14, 6, trim);                   // string drawn back
+          setPx(g, 14, 8, trim);
+          setRect(g, 9, 7, 5, 1, '#e6e0cf');
+          setPx(g, 14, 7, '#ffffff');
+        } else if (attacking && frame >= 1) {
           setRect(g, 10, 7, 5, 1, '#e6e0cf');      // arrow
           setPx(g, 15, 7, '#ffffff');
         }
       } else {
         setRect(g, 12, 3, 1, 11, weapon);          // staff
-        setPx(g, 11, 2, attacking ? '#ffffff' : '#8ee8ff');
-        setPx(g, 12, 1, attacking ? '#d9fbff' : '#57c9ff');
-        setPx(g, 13, 2, attacking ? '#ffffff' : '#8ee8ff');
+        const charged = casting || attacking;
+        setPx(g, 11, 2, charged ? '#ffffff' : '#8ee8ff');
+        setPx(g, 12, 1, charged ? '#d9fbff' : '#57c9ff');
+        setPx(g, 13, 2, charged ? '#ffffff' : '#8ee8ff');
+        if (casting) {
+          setPx(g, 10, 1, trim);
+          setPx(g, 14, 1, trim);
+          setPx(g, 12, 0, '#ffffff');
+        }
         if (attacking && frame === 2) {
           setPx(g, 14, 1, '#ffb15c');
           setPx(g, 15, 2, '#ff7a3c');
@@ -478,6 +496,144 @@
     });
   }
 
+  // Item images are generated from the same tiny pixel grid as characters, so
+  // every item - including role relics - has art without external files.
+  const ITEM_ART_KEYS = new Set([
+    'potion', 'sword', 'bow', 'staff', 'armor',
+    'roleSword', 'roleBow', 'roleStaff'
+  ]);
+
+  function itemArtKey(item) {
+    if (!item) return 'armor';
+    if (ITEM_ART_KEYS.has(item.art)) return item.art;
+    const name = String(item.name || '').toLowerCase();
+    if (item.slot === 'consumable' || name.includes('potion')) return 'potion';
+    if (name.includes('bow')) return 'bow';
+    if (name.includes('staff') || name.includes('wand')) return 'staff';
+    if (name.includes('sword') || name.includes('blade') || name.includes('edge')) return 'sword';
+    if (item.slot === 'armor' || name.includes('armor') || name.includes('mail') ||
+        name.includes('vest') || name.includes('gear')) return 'armor';
+    return item.slot === 'weapon' ? 'sword' : 'potion';
+  }
+
+  function itemSprite(item) {
+    const art = itemArtKey(item);
+    const rarityColor = item && RARITY[item.rarity] ? RARITY[item.rarity].color : '#c0c6d2';
+    const metal = (item && (item.spriteColor || item.color)) || rarityColor;
+    const glow = (item && item.color) || metal;
+    return cachedSprite(`item_${art}_${metal}_${glow}`, () => {
+      const g = emptyGrid();
+      const dark = '#252b3a';
+      const gold = '#ffd75e';
+      const light = '#ffffff';
+      const wood = '#7a5230';
+
+      if (art === 'potion') {
+        setRect(g, 6, 1, 4, 2, '#cbbda4');
+        setPx(g, 6, 0, '#a99a80');
+        setPx(g, 9, 0, '#a99a80');
+        setRect(g, 5, 3, 6, 2, '#e6eaf3');
+        setRect(g, 4, 5, 8, 8, '#e6eaf3');
+        setRect(g, 5, 7, 6, 5, glow);
+        setPx(g, 5, 5, light);
+        setPx(g, 6, 4, light);
+        setPx(g, 10, 11, light);
+        setRect(g, 5, 13, 6, 1, '#9aa7bd');
+      } else if (art === 'sword') {
+        setPx(g, 7, 1, metal);
+        setPx(g, 8, 1, metal);
+        setRect(g, 7, 2, 2, 8, metal);
+        setPx(g, 7, 3, light);
+        setPx(g, 7, 4, light);
+        setPx(g, 8, 9, '#9aa8bd');
+        setRect(g, 5, 10, 6, 1, gold);
+        setPx(g, 5, 9, gold);
+        setPx(g, 10, 9, gold);
+        setRect(g, 7, 11, 2, 3, wood);
+        setRect(g, 7, 14, 2, 1, '#4a3323');
+      } else if (art === 'roleSword') {
+        setPx(g, 7, 0, glow);
+        setPx(g, 8, 0, light);
+        setRect(g, 6, 1, 4, 9, metal);
+        setPx(g, 7, 2, light);
+        setPx(g, 7, 5, light);
+        setPx(g, 9, 8, '#9aa8bd');
+        setRect(g, 4, 10, 8, 2, gold);
+        setPx(g, 4, 9, glow);
+        setPx(g, 11, 9, glow);
+        setPx(g, 7, 11, light);
+        setRect(g, 7, 12, 2, 2, '#5b3a24');
+        setPx(g, 3, 5, glow);
+        setPx(g, 12, 3, glow);
+      } else if (art === 'bow' || art === 'roleBow') {
+        const arc = art === 'roleBow'
+          ? [[5, 2], [6, 2], [7, 3], [8, 4], [9, 5], [9, 9], [8, 10], [7, 11], [6, 12], [5, 12], [4, 11]]
+          : [[5, 2], [6, 2], [7, 3], [8, 4], [8, 5], [8, 9], [7, 10], [6, 11], [5, 11], [4, 10]];
+        for (const [px, py] of arc) setPx(g, px, py, metal);
+        setRect(g, art === 'roleBow' ? 3 : 4, 3, 1, 9, art === 'roleBow' ? light : '#efe7d0');
+        setRect(g, 2, 7, art === 'roleBow' ? 12 : 11, 1, '#f0e6cd');
+        setPx(g, art === 'roleBow' ? 14 : 13, 6, metal);
+        setPx(g, art === 'roleBow' ? 15 : 14, 7, light);
+        setPx(g, art === 'roleBow' ? 14 : 13, 8, metal);
+        if (art === 'roleBow') {
+          setPx(g, 6, 2, gold);
+          setPx(g, 6, 12, gold);
+          setPx(g, 2, 6, glow);
+          setPx(g, 2, 8, glow);
+          setPx(g, 7, 7, light);
+        }
+      } else if (art === 'staff' || art === 'roleStaff') {
+        const ornate = art === 'roleStaff';
+        setRect(g, 7, ornate ? 6 : 5, 2, ornate ? 9 : 10, ornate ? '#5b3a24' : wood);
+        setPx(g, 7, 15, '#4a3323');
+        setPx(g, 8, 15, '#4a3323');
+        setRect(g, 6, ornate ? 5 : 4, 4, 1, gold);
+        if (ornate) {
+          setPx(g, 6, 3, glow);
+          setPx(g, 7, 2, glow);
+          setPx(g, 8, 2, light);
+          setPx(g, 9, 3, glow);
+          setPx(g, 7, 4, glow);
+          setPx(g, 8, 4, glow);
+          setPx(g, 5, 1, gold);
+          setPx(g, 11, 2, glow);
+          setPx(g, 10, 0, light);
+        } else {
+          setPx(g, 6, 2, metal);
+          setPx(g, 7, 1, metal);
+          setPx(g, 8, 1, metal);
+          setPx(g, 9, 2, metal);
+          setPx(g, 7, 3, metal);
+          setPx(g, 8, 3, metal);
+          setPx(g, 7, 2, light);
+        }
+      } else {
+        setRect(g, 4, 3, 8, 2, dark);
+        setRect(g, 3, 4, 2, 4, metal);
+        setRect(g, 11, 4, 2, 4, metal);
+        setRect(g, 5, 5, 6, 6, metal);
+        setRect(g, 6, 6, 4, 3, glow);
+        setPx(g, 7, 7, light);
+        setPx(g, 8, 8, light);
+        setRect(g, 5, 11, 6, 2, dark);
+        setPx(g, 5, 12, gold);
+        setPx(g, 10, 12, gold);
+      }
+      return g;
+    });
+  }
+
+  function drawItemImage(ctx, item, x, y, size, alpha = 1) {
+    if (!ctx || !item) return;
+    const sprite = itemSprite(item);
+    const s = Math.max(8, Math.round(size));
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(sprite, Math.round(x), Math.round(y), s, s);
+    ctx.restore();
+  }
+
   const tileCache = new Map();
 
   // STAGE 1: grass, water and trees. STAGE 3 adds sand, rock and cave tiles.
@@ -533,6 +689,48 @@
 
   let nextItemId = 1;
 
+  // One signature epic per role. Each has a stable art key so its pixel image
+  // survives saves, mail, auctions and server normalization.
+  const ROLE_ITEM_ART = {
+    swordsman: 'roleSword',
+    archer: 'roleBow',
+    mage: 'roleStaff'
+  };
+
+  const ROLE_ITEM_DEFS = {
+    swordsman: {
+      name: 'Dawnfang Blade', art: ROLE_ITEM_ART.swordsman, icon: 'S',
+      stats: { attack: 18, hp: 12, speed: 4 },
+      effect: 'flame', spriteColor: '#eef5ff', color: '#ffd27a', price: 420,
+      desc: 'Swordsman relic: a sunlit blade that burns on impact.'
+    },
+    archer: {
+      name: 'Windsong Bow', art: ROLE_ITEM_ART.archer, icon: 'B',
+      stats: { attack: 14, speed: 12, range: 28 },
+      effect: 'frost', spriteColor: '#9ce7c4', color: '#8ee6ff', price: 420,
+      desc: 'Archer relic: a living bow that hums with the north wind.'
+    },
+    mage: {
+      name: 'Astral Flame Staff', art: ROLE_ITEM_ART.mage, icon: 'T',
+      stats: { attack: 16, mana: 24, range: 18 },
+      effect: 'void', spriteColor: '#c9a6ff', color: '#ffb15c', price: 420,
+      desc: 'Mage relic: focuses starlight into an eternal flame.'
+    }
+  };
+
+  function roleItem(classId) {
+    const def = ROLE_ITEM_DEFS[classId] || ROLE_ITEM_DEFS.swordsman;
+    return makeItem(def.name, 'weapon', 'epic', def.stats, {
+      art: def.art,
+      icon: def.icon,
+      spriteColor: def.spriteColor,
+      color: def.color,
+      effect: def.effect,
+      price: def.price,
+      desc: def.desc
+    });
+  }
+
   function makeItem(name, slot, rarity, stats, extra = {}) {
     return {
       uid: extra.uid !== undefined ? extra.uid : nextItemId++,
@@ -546,6 +744,7 @@
       effect: extra.effect || '',
       enchant: clamp(Number(extra.enchant) || 0, 0, 5),
       icon: extra.icon || name[0],
+      art: extra.art || null,
       price: extra.price || Math.round(25 * RARITY[rarity].mult),
       heal: extra.heal || 0,
       desc: extra.desc || ''
@@ -554,17 +753,17 @@
 
   function starterItems(classId) {
     const weapon = classId === 'swordsman'
-      ? makeItem('Iron Sword', 'weapon', 'common', { attack: 5 }, { spriteColor: '#d4e0ec', desc: 'A trusty blade.' })
+      ? makeItem('Iron Sword', 'weapon', 'common', { attack: 5 }, { art: 'sword', spriteColor: '#d4e0ec', desc: 'A trusty blade.' })
       : classId === 'archer'
-        ? makeItem('Short Bow', 'weapon', 'common', { attack: 4 }, { spriteColor: '#9c6a3d', desc: 'Light and quick.' })
-        : makeItem('Oak Staff', 'weapon', 'common', { attack: 6 }, { spriteColor: '#b37b45', desc: 'Channels fire magic.' });
+        ? makeItem('Short Bow', 'weapon', 'common', { attack: 4 }, { art: 'bow', spriteColor: '#9c6a3d', desc: 'Light and quick.' })
+        : makeItem('Oak Staff', 'weapon', 'common', { attack: 6 }, { art: 'staff', spriteColor: '#b37b45', desc: 'Channels fire magic.' });
     const armorColor = classId === 'mage' ? '#8b63c8' : classId === 'archer' ? '#5c9b66' : '#7896c4';
-    const armor = makeItem('Traveler Gear', 'armor', 'common', { hp: 10, defense: 2 }, { spriteColor: armorColor, desc: 'Basic adventurer clothes.' });
+    const armor = makeItem('Traveler Gear', 'armor', 'common', { hp: 10, defense: 2 }, { art: 'armor', spriteColor: armorColor, desc: 'Basic adventurer clothes.' });
     return {
       equipment: { weapon, armor },
       inventory: [
-        makeItem('Health Potion', 'consumable', 'common', {}, { icon: 'P', heal: 55, price: 20, desc: 'Restores 55 HP.' }),
-        makeItem('Health Potion', 'consumable', 'common', {}, { icon: 'P', heal: 55, price: 20, desc: 'Restores 55 HP.' })
+        makeItem('Health Potion', 'consumable', 'common', {}, { art: 'potion', icon: 'P', heal: 55, price: 20, desc: 'Restores 55 HP.' }),
+        makeItem('Health Potion', 'consumable', 'common', {}, { art: 'potion', icon: 'P', heal: 55, price: 20, desc: 'Restores 55 HP.' })
       ]
     };
   }
@@ -575,7 +774,7 @@
     const mult = RARITY[rarity].mult;
     if (index % 3 === 2) {
       return makeItem('Greater Potion', 'consumable', rarity, {}, {
-        icon: 'P', heal: Math.round(90 * mult), price: Math.round(35 * mult), desc: 'A stronger healing potion.'
+        art: 'potion', icon: 'P', heal: Math.round(90 * mult), price: Math.round(35 * mult), desc: 'A stronger healing potion.'
       });
     }
     const kind = index % 2 === 0 ? 'weapon' : 'armor';
@@ -584,19 +783,41 @@
         rarity === 'epic' ? 'Runed Edge' : rarity === 'rare' ? 'Steelervoir' : 'Practice Weapon',
         'weapon', rarity,
         { attack: Math.round(6 * mult) },
-        { spriteColor: rarity === 'epic' ? '#d38bff' : rarity === 'rare' ? '#7fc4ff' : '#c0c6d2', desc: 'Increases attack power.' }
+        {
+          art: 'sword',
+          spriteColor: rarity === 'epic' ? '#d38bff' : rarity === 'rare' ? '#7fc4ff' : '#c0c6d2',
+          desc: 'Increases attack power.'
+        }
       );
     }
     return makeItem(
       rarity === 'epic' ? 'Dragonhide' : rarity === 'rare' ? 'Knight Mail' : 'Padded Vest',
       'armor', rarity,
       { hp: Math.round(16 * mult), defense: Math.round(3 * mult) },
-      { spriteColor: rarity === 'epic' ? '#b465d9' : rarity === 'rare' ? '#5f86c9' : '#8a8f9c', desc: 'Increases HP and defense.' }
+      {
+        art: 'armor',
+        spriteColor: rarity === 'epic' ? '#b465d9' : rarity === 'rare' ? '#5f86c9' : '#8a8f9c',
+        desc: 'Increases HP and defense.'
+      }
     );
   }
 
   function makeShopStock() {
-    return Array.from({ length: 6 }, (_, i) => randomShopItem(i));
+    // Three familiar supplies plus one signature relic for each role.
+    return [
+      randomShopItem(0),
+      randomShopItem(1),
+      randomShopItem(2),
+      roleItem('swordsman'),
+      roleItem('archer'),
+      roleItem('mage')
+    ];
+  }
+
+  function randomMobItem() {
+    const roleIds = Object.keys(ROLE_ITEM_DEFS);
+    if (Math.random() < 0.22) return roleItem(roleIds[Math.floor(Math.random() * roleIds.length)]);
+    return randomShopItem(randInt(0, 5));
   }
 
   function normalizeItem(raw) {
@@ -611,6 +832,7 @@
       effect: raw.effect,
       enchant: raw.enchant,
       icon: raw.icon,
+      art: raw.art,
       price: raw.price,
       heal: raw.heal,
       desc: raw.desc
@@ -902,11 +1124,13 @@
         ctx.fillStyle = '#e8515c';
         ctx.fillRect(x - 3, y - 4, 6, 7);
       } else if (this.kind === 'item') {
-        const c = this.item ? RARITY[this.item.rarity].color : '#fff';
-        ctx.fillStyle = '#202633';
-        ctx.fillRect(x - 5, y - 5, 10, 10);
-        ctx.fillStyle = c;
-        ctx.fillRect(x - 4, y - 4, 8, 8);
+        const c = this.item && RARITY[this.item.rarity] ? RARITY[this.item.rarity].color : '#fff';
+        ctx.fillStyle = 'rgba(8,12,22,0.85)';
+        ctx.fillRect(x - 11, y - 11, 22, 22);
+        ctx.strokeStyle = c;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x - 10.5, y - 10.5, 21, 21);
+        drawItemImage(ctx, this.item, x - 9, y - 9, 18);
       }
       ctx.restore();
     }
@@ -1036,6 +1260,7 @@
       this.attackCd = 0;
       this.attackAnim = 0;
       this.skillAnim = 0;
+      this.skillAnimDuration = 0.55;
       this.skillAnimColor = '#fff';
       this.skillAnimName = '';
       this.walkFrame = 0;
@@ -1093,11 +1318,12 @@
 
     // Visible cast animation shared by offline play and server fx events.
     playSkillAnim(game, def, color) {
-      this.skillAnim = 0.55;
+      this.skillAnimDuration = 0.55;
+      this.skillAnim = this.skillAnimDuration;
       this.skillAnimColor = color || CLASS_DATA[this.classId].color;
       this.skillAnimName = def && def.name ? def.name : '';
       if (game && this.skillAnimName) {
-        game.addFloater(this.x, this.y - 76, this.skillAnimName, this.skillAnimColor, 11);
+        game.addFloater(this.x, this.y - 96, this.skillAnimName, this.skillAnimColor, 11);
       }
     }
 
@@ -1431,9 +1657,11 @@
         ? clamp(Math.floor((1 - this.attackAnim / 0.35) * 4), 0, 3)
         : this.walkFrame;
       const blink = this.invuln > 0 && Math.floor(game.time * 18) % 2 === 0;
-      drawSprite(ctx, playerSprite(this.classId, frame, attacking, this.equipment, { spec: this.spec }), this.x, this.y, SPRITE_SCALE, blink ? 0.45 : 1);
+      drawSprite(ctx, playerSprite(this.classId, frame, attacking, this.equipment, {
+        spec: this.spec, casting: this.skillAnim > 0
+      }), this.x, this.y, SPRITE_SCALE, blink ? 0.45 : 1);
       drawNameTag(ctx, this.name, `Lv ${this.level} ${CLASS_DATA[this.classId].name}`, this.x, this.y - 42, CLASS_DATA[this.classId].color);
-      if (this.emote) drawEmote(ctx, this.x, this.y - 78, this.emote.text);
+      if (this.emote) drawEmote(ctx, this.x, this.y - (this.skillAnim > 0 ? 96 : 78), this.emote.text);
     }
   }
 
@@ -1452,10 +1680,11 @@
     ctx.restore();
   }
 
-  // A short glowing aura makes every skill visibly "fire" on the caster.
+  // A short glowing aura plus a cast bar makes every skill visibly "cast".
   function drawSkillAura(ctx, actor, game) {
     if (!(actor.skillAnim > 0)) return;
-    const t = clamp(actor.skillAnim / 0.55, 0, 1);
+    const duration = actor.skillAnimDuration || 0.55;
+    const t = clamp(actor.skillAnim / duration, 0, 1);
     const color = actor.skillAnimColor || '#fff';
     ctx.save();
     ctx.globalAlpha = t * 0.9;
@@ -1469,6 +1698,24 @@
       const r = 26 + (1 - t) * 16;
       ctx.fillStyle = color;
       ctx.fillRect(actor.x + Math.cos(a) * r - 2, actor.y - 14 + Math.sin(a) * r - 2, 4, 4);
+    }
+
+    // Cast name and progress sit just above the name tag without covering it.
+    if (actor.skillAnimName) {
+      const bx = actor.x - 32;
+      const by = actor.y - 86;
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = 'rgba(5,8,16,0.82)';
+      ctx.fillRect(bx, by, 64, 14);
+      ctx.fillStyle = '#0b1020';
+      ctx.fillRect(bx + 5, by + 11, 54, 4);
+      ctx.fillStyle = color;
+      ctx.fillRect(bx + 6, by + 12, Math.max(1, Math.round(52 * (1 - t))), 2);
+      ctx.font = 'bold 8px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#f4f8ff';
+      ctx.fillText(actor.skillAnimName, actor.x, by + 9);
+      ctx.textAlign = 'left';
     }
     ctx.restore();
   }
@@ -1981,7 +2228,9 @@
       this.moving = false;
       this.walkFrame = 0;
       this.skillAnim = 0;
+      this.skillAnimDuration = 0.55;
       this.skillAnimColor = '#fff';
+      this.skillAnimName = '';
       this.tx = data.x;
       this.ty = data.y;
       this.update(data);
@@ -2005,19 +2254,23 @@
       this.attackAnim = Math.max(0, (this.attackAnim || 0) - dt);
       this.skillAnim = Math.max(0, (this.skillAnim || 0) - dt);
     }
-    playSkillAnim(color) {
-      this.skillAnim = 0.55;
+    playSkillAnim(color, name) {
+      this.skillAnimDuration = 0.55;
+      this.skillAnim = this.skillAnimDuration;
       this.skillAnimColor = color || '#fff';
+      this.skillAnimName = name || (SKILLS[this.classId] && SKILLS[this.classId][0] && SKILLS[this.classId][0].name) || 'Skill';
     }
     draw(ctx, game) {
       shadow(ctx, this.x, this.y, 12, 5);
       drawSkillAura(ctx, this, game);
       const frame = this.attackAnim > 0 ? clamp(Math.floor((1 - this.attackAnim / 0.35) * 4), 0, 3)
         : this.moving ? Math.floor(game.time * 8) % 4 : 0;
-      drawSprite(ctx, playerSprite(this.classId, frame, this.attackAnim > 0, {}, { spec: this.spec }), this.x, this.y, SPRITE_SCALE);
+      drawSprite(ctx, playerSprite(this.classId, frame, this.attackAnim > 0, {}, {
+        spec: this.spec, casting: this.skillAnim > 0
+      }), this.x, this.y, SPRITE_SCALE);
       drawNameTag(ctx, this.name, `Lv ${this.level} ${CLASS_DATA[this.classId].name}${this.party ? ' *' : ''}`, this.x, this.y - 42, this.party ? '#ffd75e' : '#b9d9ff');
       drawBar(ctx, this.x - 15, this.y - 46, 30, 3, this.hp / this.maxHp, '#6ee787');
-      if (this.emote) drawEmote(ctx, this.x, this.y - 78, this.emote.text);
+      if (this.emote) drawEmote(ctx, this.x, this.y - (this.skillAnim > 0 ? 96 : 78), this.emote.text);
     }
   }
 
@@ -2598,6 +2851,22 @@
       if (amount > 0) this.addFloater(x, y - 30, `${amount} XP`, '#8ee6ff', 10);
     }
 
+    // Visible monster item-drop burst; online mirrors this with an itemDrop fx.
+    showItemDrop(x, y, item) {
+      if (!item) return;
+      const color = RARITY[item.rarity] ? RARITY[item.rarity].color : '#c9a6ff';
+      this.effects.push(new Effect('ring', x, y - 6, {
+        color, radius: 5, endRadius: 30, life: 0.35
+      }));
+      for (let i = 0; i < 6; i++) {
+        const a = i / 6 * TAU;
+        this.effects.push(new Effect('particle', x, y - 8, {
+          color, vx: Math.cos(a) * 75, vy: Math.sin(a) * 75 - 25, life: 0.32, size: 3
+        }));
+      }
+      this.addFloater(x, y - 44, `ITEM: ${item.name}`, color, 10);
+    }
+
     spawnProjectile(opts) {
       this.projectiles.push(new Projectile(opts));
     }
@@ -3125,6 +3394,14 @@
         this.showXpDrop(x, y, Number(ev.amount) || 0);
         return;
       }
+      if (visual === 'itemDrop') {
+        const dropColor = ev.color || '#c9a6ff';
+        this.effects.push(new Effect('ring', x, y - 6, {
+          color: dropColor, radius: 5, endRadius: 30, life: 0.35
+        }));
+        this.addFloater(x, y - 44, `ITEM: ${ev.name || 'Item'}`, dropColor, 10);
+        return;
+      }
       if (visual === 'spawn') {
         const spawnColor = ev.color || (ev.type === 'goblin' ? '#8fd66c' : '#7bdcff');
         this.effects.push(new Effect('ring', x, y - 8, {
@@ -3158,7 +3435,7 @@
       if (isSelf && this.player) this.player.playSkillAnim(this, { name }, color);
       else {
         const remote = this.network.players.get(String(ownerId));
-        if (remote) remote.playSkillAnim(color);
+        if (remote) remote.playSkillAnim(color, name);
         this.addFloater(x, y - 76, name, color, 11);
       }
 
@@ -3588,8 +3865,10 @@
         this.pickups.push(new Pickup('gold', enemy.x + rand(-8, 8), enemy.y - 4, enemy.goldReward));
         if (enemy.type === 'slime' && Math.random() < 0.55) this.pickups.push(new Pickup('herb', enemy.x, enemy.y - 6));
         if (enemy.type === 'goblin' && Math.random() < 0.22) this.pickups.push(new Pickup('herb', enemy.x, enemy.y - 6));
-        if (enemy.type !== 'boss' && Math.random() < 0.07) {
-          this.pickups.push(new Pickup('item', enemy.x, enemy.y - 6, 1, randomShopItem(randInt(0, 5))));
+        if (enemy.type !== 'boss' && Math.random() < 0.12) {
+          const item = randomMobItem();
+          this.pickups.push(new Pickup('item', enemy.x + rand(-6, 6), enemy.y - 6, 1, item));
+          this.showItemDrop(enemy.x, enemy.y, item);
         }
       }
       if (enemy.type === 'boss') {
@@ -4550,11 +4829,7 @@
       ctx.fillRect(x - 22, y - 22, 44, 44);
       ctx.fillStyle = RARITY[item.rarity].color;
       ctx.fillRect(x - 19, y - 19, 38, 38);
-      ctx.fillStyle = '#111';
-      ctx.font = 'bold 16px monospace';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(item.icon, x, y);
+      drawItemImage(ctx, item, x - 16, y - 16, 32);
       ctx.textBaseline = 'alphabetic';
     }
 
@@ -4733,14 +5008,10 @@
         ctx.strokeRect(cx + 0.5, cy + 0.5, size - 1, size - 1);
         if (item) {
           ctx.fillStyle = color;
+          ctx.globalAlpha = 0.12;
           ctx.fillRect(cx + 6, cy + 6, size - 12, size - 12);
-          ctx.fillStyle = '#101522';
-          ctx.font = 'bold 20px monospace';
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.fillText(item.icon, cx + size / 2, cy + size / 2);
-          ctx.textBaseline = 'alphabetic';
-          ctx.textAlign = 'left';
+          ctx.globalAlpha = 1;
+          drawItemImage(ctx, item, cx + 6, cy + 6, size - 12);
         }
         this.dropRegions.push({ x: cx, y: cy, w: size, h: size, item, source });
       };
@@ -4848,12 +5119,10 @@
         ctx.lineWidth = 2;
         ctx.strokeRect(bx + 1, by + 1, 272, 102);
         ctx.fillStyle = RARITY[item.rarity].color;
+        ctx.globalAlpha = 0.18;
         ctx.fillRect(bx + 8, by + 10, 24, 24);
-        ctx.fillStyle = '#111';
-        ctx.font = 'bold 15px monospace';
-        ctx.textAlign = 'center';
-        ctx.fillText(item.icon, bx + 20, by + 27);
-        ctx.textAlign = 'left';
+        ctx.globalAlpha = 1;
+        drawItemImage(ctx, item, bx + 8, by + 10, 24);
         ctx.font = 'bold 12px monospace';
         ctx.fillStyle = RARITY[item.rarity].color;
         ctx.fillText(item.name, bx + 40, by + 22);
@@ -4931,11 +5200,7 @@
         ctx.strokeStyle = selected ? '#ffd75e' : RARITY[item.rarity].color;
         ctx.lineWidth = selected ? 3 : 1;
         ctx.strokeRect(cx + 0.5, cy + 0.5, cell - 1, cell - 1);
-        ctx.fillStyle = RARITY[item.rarity].color;
-        ctx.font = 'bold 16px monospace';
-        ctx.textAlign = 'center';
-        ctx.fillText(item.icon, cx + cell / 2, cy + 25);
-        ctx.textAlign = 'left';
+        drawItemImage(ctx, item, cx + 5, cy + 5, cell - 10);
         this.clickRegions.push({ x: cx, y: cy, w: cell, h: cell, action: 'selectItem:' + i });
       });
 
@@ -4966,8 +5231,9 @@
         ctx.strokeRect(x + 392.5, ry + 0.5, 285, 29);
         ctx.textAlign = 'left';
         ctx.font = '10px monospace';
+        if (item) drawItemImage(ctx, item, x + 398, ry + 2, 26);
         ctx.fillStyle = item ? RARITY[item.rarity].color : '#dbe6ff';
-        ctx.fillText(item ? `${item.icon} ${item.name}` : 'Item', x + 400, ry + 19);
+        ctx.fillText(item ? item.name : 'Item', x + 428, ry + 19);
         ctx.fillStyle = '#ffd75e';
         ctx.fillText(`${row.price || 0}g`, x + 554, ry + 19);
         const seller = String(row.ownerName || row.seller || row.username || '');
@@ -5021,11 +5287,7 @@
         ctx.strokeStyle = item.uid === this.selectedItemUid ? '#ffd75e' : RARITY[item.rarity].color;
         ctx.lineWidth = item.uid === this.selectedItemUid ? 2 : 1;
         ctx.strokeRect(cx + 0.5, cy + 0.5, 23, 23);
-        ctx.fillStyle = RARITY[item.rarity].color;
-        ctx.font = 'bold 13px monospace';
-        ctx.textAlign = 'center';
-        ctx.fillText(item.icon, cx + 12, cy + 16);
-        ctx.textAlign = 'left';
+        drawItemImage(ctx, item, cx + 2, cy + 2, 20);
         this.clickRegions.push({ x: cx, y: cy, w: 24, h: 24, action: 'selectItem:' + i });
       });
 
@@ -5055,8 +5317,9 @@
         ctx.fillStyle = '#dbe6ff';
         ctx.fillText(String(row.message || '').slice(0, 34), x + 308, ry + 27);
         if (item) {
+          drawItemImage(ctx, item, x + 464, ry + 2, 20);
           ctx.fillStyle = RARITY[item.rarity].color;
-          ctx.fillText(`${item.icon} ${item.name}`, x + 470, ry + 14);
+          ctx.fillText(item.name, x + 488, ry + 14);
         }
         if (row.gold) {
           ctx.fillStyle = '#ffd75e';
@@ -5165,11 +5428,7 @@
         ctx.strokeStyle = item.uid === this.selectedItemUid ? '#ffd75e' : (item.color || RARITY[item.rarity].color);
         ctx.lineWidth = item.uid === this.selectedItemUid ? 3 : 1;
         ctx.strokeRect(cx + 0.5, cy + 0.5, 39, 39);
-        ctx.fillStyle = item.color || RARITY[item.rarity].color;
-        ctx.font = 'bold 15px monospace';
-        ctx.textAlign = 'center';
-        ctx.fillText(item.icon, cx + 20, cy + 25);
-        ctx.textAlign = 'left';
+        drawItemImage(ctx, item, cx + 4, cy + 4, 32);
         this.clickRegions.push({ x: cx, y: cy, w: 40, h: 40, action: 'selectItem:' + i });
       });
 
