@@ -19,13 +19,15 @@ const TILE_ID = {
   SAND: 3,
   ROCK: 4,
   CAVE: 5,
-  CACTUS: 6
+  CACTUS: 6,
+  PATH: 7,
+  HOUSE_ROOF: 8,
+  HOUSE_WALL: 9
 };
 
-// Obstacles were removed from the generated maps. Only ROCK (the outer
-// cave/dungeon border) is solid, so scenery cannot block combat or trap mobs.
-const BLOCKED_TILES = new Set([TILE_ID.ROCK]);
-const PROJECTILE_BLOCKER = TILE_ID.ROCK;
+// Trees, water, cacti, cave walls and village buildings block movement and shots.
+const BLOCKED_TILES = new Set([TILE_ID.WATER, TILE_ID.TREE, TILE_ID.ROCK, TILE_ID.CACTUS, TILE_ID.HOUSE_ROOF, TILE_ID.HOUSE_WALL]);
+const PROJECTILE_BLOCKER = new Set(BLOCKED_TILES);
 
 const CLASS_DATA = {
   swordsman: { name: 'Swordsman', maxHp: 145, attack: 18, speed: 108, range: 54, mana: 60, manaRegen: 7, defense: 4, color: '#8fd0ff' },
@@ -75,7 +77,8 @@ const EFFECT_COLORS = {
 const ZONE_SPAWN = {
   forest: { x: 520, y: 420 },
   cave: { x: 270, y: 300 },
-  desert: { x: 2780, y: 1980 }
+  desert: { x: 2780, y: 1980 },
+  village: { x: 1552, y: 1168 }
 };
 
 const PORTAL_DEFS = {
@@ -90,6 +93,9 @@ const PORTAL_DEFS = {
   desert: [
     { x: 2760, y: 1980, to: 'cave', label: 'Cave', color: '#b08bff', arrive: { x: 2820, y: 2080 } },
     { x: 240, y: 260, to: 'forest', label: 'Forest', color: '#7bdc7b', arrive: { x: 270, y: 2080 } }
+  ],
+  village: [
+    { x: 1552, y: 656, to: 'forest', label: 'Forest Gate', color: '#7bdc7b', arrive: { x: 520, y: 420 } }
   ]
 };
 
@@ -97,14 +103,18 @@ const NPC_DEFS = [
   { type: 'shop', name: 'Merchant Mina', x: 620, y: 380, radius: 14 },
   { type: 'quest', name: 'Elder Tarn', x: 770, y: 430, radius: 14 }
 ];
+const VILLAGE_NPC_DEFS = [
+  { type: 'guard', name: 'Village Guard', x: 1650, y: 1168, radius: 15 }
+];
 
 const ZONE_ENEMY_COUNTS = {
   forest: { slime: 15, goblin: 6 },
   cave: { slime: 6, goblin: 7, brute: 4 },
-  desert: { slime: 8, goblin: 9, scout: 4 }
+  desert: { slime: 8, goblin: 9, scout: 4 },
+  village: {}
 };
 
-const ZONE_MUL = { forest: 1, cave: 1.7, desert: 2.4 };
+const ZONE_MUL = { forest: 1, cave: 1.7, desert: 2.4, village: 1 };
 const DUNGEON_SPAWN = { x: 5 * TILE + TILE / 2, y: 18 * TILE + TILE / 2 };
 const DUNGEON_BOSS = { x: 30 * TILE, y: 18 * TILE };
 
@@ -146,11 +156,26 @@ function clearCircle(zone, x, y, tileRadius, baseTile) {
   }
 }
 
+function paintVillage(zone) {
+  const put = (x, y, tile) => {
+    if (x >= 0 && y >= 0 && x < zone.w && y < zone.h) zone.tiles[y * zone.w + x] = tile;
+  };
+  for (let x = 24; x <= 72; x++) { put(x, 35, TILE_ID.PATH); put(x, 36, TILE_ID.PATH); }
+  for (let y = 18; y <= 52; y++) { put(47, y, TILE_ID.PATH); put(48, y, TILE_ID.PATH); }
+  for (let y = 31; y <= 40; y++) for (let x = 43; x <= 52; x++) {
+    if (Math.hypot(x - 47.5, y - 35.5) <= 5) put(x, y, TILE_ID.PATH);
+  }
+  for (const [x, y] of [[33, 25], [56, 25], [33, 43], [56, 43]]) {
+    for (let dy = 0; dy < 4; dy++) for (let dx = 0; dx < 7; dx++) put(x + dx, y + dy, TILE_ID.HOUSE_ROOF);
+    for (let dy = 4; dy < 8; dy++) for (let dx = 0; dx < 7; dx++) put(x + dx, y + dy, TILE_ID.HOUSE_WALL);
+  }
+}
+
 function generateZone(id) {
   const w = 96;
   const h = 72;
   const tiles = new Uint8Array(w * h);
-  const baseTile = id === 'forest' ? TILE_ID.GRASS : id === 'cave' ? TILE_ID.CAVE : TILE_ID.SAND;
+  const baseTile = id === 'forest' || id === 'village' ? TILE_ID.GRASS : id === 'cave' ? TILE_ID.CAVE : TILE_ID.SAND;
 
   // Start with open terrain and a cave border. Decorative patches are added below.
   for (let y = 0; y < h; y++) {
@@ -159,8 +184,7 @@ function generateZone(id) {
       tiles[y * w + x] = border ? TILE_ID.ROCK : baseTile;
     }
   }
-  // Decorative landmarks mirror the browser map generator. TREE/WATER/CACTUS
-  // remain walkable; only ROCK is a collision tile.
+  // Obstacle patches mirror the browser map generator and stay clear of landmarks.
   if (id === 'forest' || id === 'desert') {
     const rng = mulberry32(id === 'forest' ? 4101 : 4103);
     const safePoints = [ZONE_SPAWN[id], ...PORTAL_DEFS[id].flatMap(p => [p, p.arrive]),
@@ -186,6 +210,7 @@ function generateZone(id) {
       }
     }
   }
+  if (id === 'village') paintVillage({ w, h, tiles });
   return { id, w, h, tiles };
 }
 
@@ -231,11 +256,43 @@ function makeItem(name, slot, rarity, stats = {}, extra = {}) {
     art: extra.art || null,
     price: Math.max(1, Math.floor(extra.price || Math.round(25 * RARITY[rarityKey].mult))),
     heal: Math.max(0, Math.floor(extra.heal || 0)),
+    quantity: slotKey === 'consumable' ? clamp(Math.floor(Number(extra.quantity) || 1), 1, 99) : 1,
+    teleportTo: extra.teleportTo || null,
     desc: String(extra.desc || '').slice(0, 200),
     enchant: clamp(Math.floor(Number(extra.enchant) || 0), 0, 5),
     effect: extra.effect || null,
     color: extra.color || null
   };
+}
+
+function sameConsumableStack(a, b) {
+  return !!a && !!b && a.slot === 'consumable' && b.slot === 'consumable' &&
+    a.name === b.name && a.rarity === b.rarity && a.heal === b.heal &&
+    (a.teleportTo || null) === (b.teleportTo || null);
+}
+
+function itemSellValue(item) {
+  const unitValue = Math.max(1, Math.floor((Number(item && item.price) || 1) * 0.5));
+  const quantity = item && item.slot === 'consumable' ? clamp(Math.floor(Number(item.quantity) || 1), 1, 99) : 1;
+  return unitValue * quantity;
+}
+
+function compactInventory(items) {
+  const compact = [];
+  for (const item of items) {
+    const stack = compact.find(existing => sameConsumableStack(existing, item) &&
+      (existing.quantity || 1) + (item.quantity || 1) <= 99);
+    if (stack) stack.quantity = (stack.quantity || 1) + (item.quantity || 1);
+    else if (compact.length < 20) compact.push(item);
+  }
+  return compact;
+}
+
+function teleportScroll() {
+  return makeItem('Village Teleport Scroll', 'consumable', 'rare', {}, {
+    art: 'scroll', icon: 'T', price: 55, teleportTo: 'village',
+    desc: 'A one-use scroll that teleports you to Hearthvale Village.'
+  });
 }
 
 // One signature epic per role. The art key must match the client so images
@@ -281,18 +338,38 @@ function roleItem(classId) {
   });
 }
 
+function weaponClassFor(item) {
+  if (!item || item.slot !== 'weapon') return null;
+  const role = Object.entries(ROLE_ITEM_DEFS).find(([id, def]) =>
+    item.art === ROLE_ITEM_ART[id] || item.name === def.name);
+  if (role) return role[0];
+  if (item.art === 'sword' || /sword|blade|runed edge/i.test(item.name || '')) return 'swordsman';
+  if (item.art === 'bow' || /\bbow\b/i.test(item.name || '')) return 'archer';
+  if (item.art === 'staff' || /staff|wand/i.test(item.name || '')) return 'mage';
+  return null;
+}
+
+function itemCanEquip(item, classId) {
+  if (!item || !['weapon', 'armor'].includes(item.slot)) return false;
+  const requiredClass = item.slot === 'weapon' ? (weaponClassFor(item) || item.classId) : item.classId;
+  return !requiredClass || requiredClass === classId;
+}
+
 // Accept loosely shaped items from old saves / client messages and tidy them.
 function normalizeItem(raw, defaultClassId = null) {
   if (!raw || typeof raw !== 'object') return null;
   const roleClassId = Object.entries(ROLE_ITEM_DEFS)
     .find(([id, def]) => raw.art === ROLE_ITEM_ART[id] || raw.name === def.name)?.[0];
+  const typeClassId = weaponClassFor({ slot: raw.slot, art: raw.art, name: raw.name });
   return makeItem(raw.name, raw.slot, raw.rarity, raw.stats, {
     uid: raw.uid,
-    classId: raw.classId || roleClassId || (['weapon', 'armor'].includes(raw.slot) ? defaultClassId : null),
+    classId: roleClassId || typeClassId || raw.classId || (['weapon', 'armor'].includes(raw.slot) ? defaultClassId : null),
     spriteColor: raw.spriteColor,
     icon: raw.icon,
     price: raw.price,
     heal: raw.heal,
+    quantity: raw.quantity,
+    teleportTo: raw.teleportTo,
     desc: raw.desc,
     enchant: raw.enchant,
     effect: raw.effect,
@@ -319,8 +396,7 @@ function starterItems(classId) {
   return {
     equipment: { weapon, armor },
     inventory: [
-      makeItem('Health Potion', 'consumable', 'common', {}, { art: 'potion', icon: 'P', heal: 55, price: 20, desc: 'Restores 55 HP.' }),
-      makeItem('Health Potion', 'consumable', 'common', {}, { art: 'potion', icon: 'P', heal: 55, price: 20, desc: 'Restores 55 HP.' })
+      makeItem('Health Potion', 'consumable', 'common', {}, { art: 'potion', icon: 'P', heal: 55, quantity: 2, price: 20, desc: 'Restores 55 HP.' })
     ]
   };
 }
@@ -330,15 +406,7 @@ function randomShopItem(index, classId = 'swordsman') {
   const rarity = rarities[index % rarities.length];
   const mult = RARITY[rarity].mult;
 
-  if (index % 3 === 2) {
-    return makeItem('Greater Potion', 'consumable', rarity, {}, {
-      art: 'potion',
-      icon: 'P',
-      heal: Math.round(90 * mult),
-      price: Math.round(35 * mult),
-      desc: 'A stronger healing potion.'
-    });
-  }
+  if (index % 3 === 2) return teleportScroll();
 
   if (index % 2 === 0) {
     const weapon = classId === 'archer'
@@ -432,7 +500,7 @@ export class World {
     this.timer = null;
 
     // Public rooms always exist. Dungeons are created on demand.
-    for (const id of ['forest', 'cave', 'desert']) this.rooms.set(id, this.makePublicRoom(id));
+    for (const id of ['forest', 'cave', 'desert', 'village']) this.rooms.set(id, this.makePublicRoom(id));
   }
 
   // ---------- Room setup ----------
@@ -447,7 +515,8 @@ export class World {
       h: zone.h,
       tiles: zone.tiles,
       portals: PORTAL_DEFS[id].map(p => ({ ...p, arrive: { ...p.arrive } })),
-      npcs: id === 'forest' ? NPC_DEFS.map(n => ({ ...n })) : [],
+      npcs: id === 'forest' ? NPC_DEFS.map(n => ({ ...n }))
+        : id === 'village' ? VILLAGE_NPC_DEFS.map(n => ({ ...n })) : [],
       players: new Set(),
       enemies: new Map(),
       projectiles: new Map(),
@@ -462,6 +531,7 @@ export class World {
       spawnTimer: 1.5
     };
     if (id === 'forest') room.specialPoints.push(...NPC_DEFS);
+    if (id === 'village') room.specialPoints.push(...VILLAGE_NPC_DEFS);
     if (id === 'cave') room.specialPoints.push({ x: 1560, y: 1120 });
 
     const counts = ZONE_ENEMY_COUNTS[id];
@@ -631,8 +701,8 @@ export class World {
     const character = client.character;
     if (!character) return;
     const classId = CLASS_DATA[character.classId] ? character.classId : 'swordsman';
-    character.inventory = (Array.isArray(character.inventory) ? character.inventory : [])
-      .map(item => normalizeItem(item, classId)).filter(Boolean).slice(0, 20);
+    character.inventory = compactInventory((Array.isArray(character.inventory) ? character.inventory : [])
+      .map(item => normalizeItem(item, classId)).filter(Boolean));
     character.equipment = character.equipment || {};
     character.equipment.weapon = normalizeItem(character.equipment.weapon, classId);
     character.equipment.armor = normalizeItem(character.equipment.armor, classId);
@@ -742,8 +812,8 @@ export class World {
     const level = Math.max(1, Number(character.level) || 1);
     const lv = level - 1;
     const equipment = character.equipment || {};
-    const weaponStats = (equipment.weapon && equipment.weapon.stats) || {};
-    const armorStats = (equipment.armor && equipment.armor.stats) || {};
+    const weaponStats = (equipment.weapon && itemCanEquip(equipment.weapon, classId) && equipment.weapon.stats) || {};
+    const armorStats = (equipment.armor && itemCanEquip(equipment.armor, classId) && equipment.armor.stats) || {};
     const eq = key => Number(weaponStats[key] || 0) + Number(armorStats[key] || 0);
     const talents = character.talents || {};
     const talent = id => clamp(Number(talents[id]) || 0, 0, 3);
@@ -1424,12 +1494,18 @@ export class World {
 
     for (const client of recipients) {
       const rarity = Math.random() < 0.5 ? 'epic' : 'rare';
+      const isWeapon = Math.random() < 0.6;
+      const classWeapon = {
+        swordsman: { name: 'Sovereign Blade', art: 'sword' },
+        archer: { name: 'Sovereign Bow', art: 'bow' },
+        mage: { name: 'Sovereign Staff', art: 'staff' }
+      }[client.character.classId];
       const loot = makeItem(
-        rarity === 'epic' ? 'Cave Sovereign Relic' : 'Boss-Slayer Charm',
-        Math.random() < 0.6 ? 'weapon' : 'armor',
+        isWeapon ? classWeapon.name : 'Boss-Slayer Charm',
+        isWeapon ? 'weapon' : 'armor',
         rarity,
         rarity === 'epic' ? { attack: 14, hp: 30, defense: 6 } : { attack: 9, hp: 18, defense: 3 },
-        { classId: client.character.classId, effect, desc: 'Forged in the heart of the dungeon.' }
+        { classId: client.character.classId, art: isWeapon ? classWeapon.art : 'armor', effect, desc: 'Forged in the heart of the dungeon for your class.' }
       );
 
       client.character.gold += 320;
@@ -1527,7 +1603,7 @@ export class World {
         const ny = projectile.y + projectile.vy * dt / steps;
 
         // Only the solid map border blocks projectiles now.
-        if (this.tileAt(room, nx, ny) === PROJECTILE_BLOCKER) {
+        if (PROJECTILE_BLOCKER.has(this.tileAt(room, nx, ny))) {
           this.impactProjectile(room, projectile, nx, ny, null);
           impacted = true;
           break;
@@ -1649,6 +1725,14 @@ export class World {
 
   collectPickup(client, pickup) {
     if (pickup.collected) return;
+    if (pickup.kind === 'item' && !this.canAddItem(client, pickup.item)) {
+      pickup.fullNoticeFor = pickup.fullNoticeFor || new Set();
+      if (!pickup.fullNoticeFor.has(client.id)) {
+        pickup.fullNoticeFor.add(client.id);
+        this.system(client, 'Inventory is full. Make room to pick up this item.');
+      }
+      return;
+    }
     pickup.collected = true;
     const room = this.rooms.get(client.roomId);
     if (room) room.pickups.delete(pickup.id);
@@ -1682,8 +1766,6 @@ export class World {
         if (item.rarity !== 'common') {
           this.event(client, 'system', { text: `You found a ${item.rarity} item: ${item.name}!`, color: RARITY[item.rarity].color });
         }
-      } else {
-        character.gold += 15;
       }
     }
 
@@ -1717,12 +1799,28 @@ export class World {
     if (announce) this.event(client, 'system', { text: `+${gained} XP`, color: '#8ee6ff' });
   }
 
+  canAddItem(client, item) {
+    const inventory = client.character.inventory || [];
+    const clean = normalizeItem(item, client.character && client.character.classId);
+    if (!clean) return false;
+    const stack = inventory.find(existing => sameConsumableStack(existing, clean) && (existing.quantity || 1) < 99);
+    return inventory.length < 20 || !!stack && (stack.quantity || 1) + clean.quantity <= 99;
+  }
+
   addItem(client, item) {
     const clean = normalizeItem(item, client.character && client.character.classId);
     if (!clean) return false;
     if (!Array.isArray(client.character.inventory)) client.character.inventory = [];
-    if (client.character.inventory.length >= 20) return false;
-    client.character.inventory.push(clean);
+    const inventory = client.character.inventory;
+    if (!this.canAddItem(client, clean)) return false;
+    const stack = inventory.find(existing => sameConsumableStack(existing, clean) && (existing.quantity || 1) < 99);
+    if (stack) {
+      const total = (stack.quantity || 1) + clean.quantity;
+      if (total <= 99) { stack.quantity = total; return true; }
+      stack.quantity = 99;
+      clean.quantity = total - 99;
+    }
+    inventory.push(clean);
     return true;
   }
 
@@ -1765,6 +1863,8 @@ export class World {
       case 'spec': this.handleSpec(client, message); break;
       case 'equip': this.handleEquip(client, message); break;
       case 'unequip': this.handleUnequip(client, message); break;
+      case 'sellItem': this.handleSellItem(client, message); break;
+      case 'discardItem': this.handleDiscardItem(client, message); break;
       case 'auctionAdd': this.handleAuctionAdd(client, message); break;
       case 'auctionBuy': this.handleAuctionBuy(client, message); break;
       case 'auctionRemove': this.handleAuctionRemove(client, message); break;
@@ -2096,6 +2196,10 @@ export class World {
     }
 
     const reward = chest.rewards && chest.rewards[String(client.id)];
+    if (reward && !this.canAddItem(client, reward)) {
+      this.error(client, 'Inventory is full. Make room before opening this chest.');
+      return;
+    }
     if (reward && this.addItem(client, reward)) {
       this.event(client, 'loot', { name: reward.name, rarity: reward.rarity });
       this.event(client, 'system', { text: `Boss chest opened: ${reward.name}!`, color: RARITY[reward.rarity]?.color || '#ffd75e' });
@@ -2141,6 +2245,8 @@ export class World {
     this.sfx(client, 'ui');
     if (npc.type === 'shop') {
       this.emitShopList(client);
+    } else if (npc.type === 'guard') {
+      this.event(client, 'system', { text: `${npc.name}: The wardstones are dimming. I heard something wake beneath Mount Veyr.`, color: '#9ce7ff' });
     } else {
       const quest = client.character.quest;
       const status = quest.claimed
@@ -2152,8 +2258,8 @@ export class World {
               ? `Cave Patrol: ${quest.goblins}/8 goblins, ${quest.ore}/4 ore.`
               : `Forest Cleanup: ${quest.kills}/10 slimes, ${quest.herbs}/5 herbs.`
             : quest.stage === 2
-              ? 'The cave needs clearing. Defeat 8 goblins and bring me 4 ore.'
-              : 'The forest needs clearing. Defeat 10 slimes and bring me 5 herbs.';
+              ? 'The wardstones are failing. Clear 8 goblins and bring me 4 ore from the cave.'
+              : 'The broken seal has stirred the forest. Defeat 10 slimes and bring me 5 herbs for the village wards.';
       this.event(client, 'system', { text: `${npc.name}: ${status}`, color: '#ffd75e' });
     }
   }
@@ -2175,7 +2281,8 @@ export class World {
 
     this.sendInit(client, room);
     this.sendCharacter(client);
-    this.system(client, `Entered ${room.public ? room.zoneId : 'the dungeon'}!`, '#c9a6ff');
+    const roomName = !room.public ? 'the dungeon' : room.zoneId === 'village' ? 'Hearthvale Village' : room.zoneId;
+    this.system(client, `Entered ${roomName}!`, '#c9a6ff');
     this.cleanupEmptyDungeon(oldRoom);
   }
 
@@ -2299,18 +2406,35 @@ export class World {
     const inventory = client.character.inventory || [];
     let index = -1;
     if (uid !== null && uid !== undefined) index = inventory.findIndex(item => item && item.uid === uid);
-    else index = inventory.findIndex(item => item && item.slot === 'consumable' && item.heal > 0);
+    else {
+      index = inventory.findIndex(item => item && item.slot === 'consumable' && item.heal > 0);
+      if (index < 0) index = inventory.findIndex(item => item && item.slot === 'consumable' && item.teleportTo === 'village');
+    }
 
     const item = index >= 0 ? inventory[index] : null;
-    if (!item || item.slot !== 'consumable' || !(item.heal > 0)) {
+    if (!item || item.slot !== 'consumable') {
       this.error(client, 'No potion found.');
       return;
     }
+    if (item.teleportTo === 'village') {
+      const room = this.rooms.get(client.roomId);
+      if (room && room.zoneId === 'village') { this.error(client, 'You are already in the village.'); return; }
+      const destination = this.rooms.get('village');
+      if (!destination || !destination.public) { this.error(client, 'The village is unavailable right now.'); return; }
+      if ((item.quantity || 1) > 1) item.quantity--;
+      else inventory.splice(index, 1);
+      this.changeRoom(client, destination, ZONE_SPAWN.village);
+      this.sfx(client, 'portal');
+      this.system(client, 'The teleport scroll carried you to Hearthvale Village.', '#c9a6ff');
+      return;
+    }
+    if (!(item.heal > 0)) { this.error(client, 'That item cannot be used this way.'); return; }
     if (client.hp >= client.maxHp) { this.error(client, 'HP is already full.'); return; }
 
     const healed = Math.min(client.maxHp - client.hp, item.heal);
     client.hp += healed;
-    inventory.splice(index, 1);
+    if ((item.quantity || 1) > 1) item.quantity--;
+    else inventory.splice(index, 1);
     this.event(client, 'system', { text: `Restored ${Math.round(healed)} HP.`, color: '#7bff9b' });
     this.event(client, 'sfx', { name: 'pickup' });
     this.sendCharacter(client);
@@ -2353,6 +2477,30 @@ export class World {
     this.syncVitals(client);
     this.event(client, 'sfx', { name: 'ui' });
     this.sendCharacter(client);
+  }
+
+  handleSellItem(client, message) {
+    const inventory = client.character.inventory || [];
+    const index = inventory.findIndex(item => item && item.uid === message.uid);
+    if (index < 0) { this.error(client, 'Item not found in your bag.'); return; }
+    const [item] = inventory.splice(index, 1);
+    const value = itemSellValue(normalizeItem(item, client.character.classId));
+    client.character.gold = Math.max(0, Number(client.character.gold) || 0) + value;
+    this.event(client, 'system', { text: `Sold ${item.name} for ${value} gold.`, color: '#ffd75e' });
+    this.sfx(client, 'pickup');
+    this.sendCharacter(client);
+    this.saveClient(client, false);
+  }
+
+  handleDiscardItem(client, message) {
+    const inventory = client.character.inventory || [];
+    const index = inventory.findIndex(item => item && item.uid === message.uid);
+    if (index < 0) { this.error(client, 'Item not found in your bag.'); return; }
+    const [item] = inventory.splice(index, 1);
+    this.event(client, 'system', { text: `Discarded ${item.name}.`, color: '#9fb0cd' });
+    this.sfx(client, 'ui');
+    this.sendCharacter(client);
+    this.saveClient(client, false);
   }
 
   handleSkillUp(client, message) {
@@ -2422,10 +2570,10 @@ export class World {
     const item = normalizeItem(stock[index], client.character.classId);
     if (!item) { this.error(client, 'That item is sold out.'); return; }
     if (client.character.gold < item.price) { this.error(client, 'Not enough gold.'); return; }
-    if ((client.character.inventory || []).length >= 20) { this.error(client, 'Inventory is full.'); return; }
+    if (!this.canAddItem(client, item)) { this.error(client, 'Inventory is full.'); return; }
 
     client.character.gold -= item.price;
-    client.character.inventory.push(item);
+    this.addItem(client, item);
     stock[index] = randomShopItem(index, client.character.classId);
     this.event(client, 'system', { text: `Bought ${item.name} for ${item.price} gold.`, color: RARITY[item.rarity].color });
     this.sfx(client, 'pickup');
@@ -2437,10 +2585,11 @@ export class World {
     const quest = client.character.quest;
     if (quest.claimed) { this.error(client, 'You have completed both requests.'); return; }
     if (quest.complete) { this.handleQuestTurnIn(client); return; }
+    if (quest.active) { this.error(client, 'This quest was already accepted. Finish its objectives and turn it in for your reward.'); return; }
     quest.active = true;
     this.event(client, 'quest', { text: quest.stage === 2
-      ? 'Cave Patrol accepted: defeat 8 goblins and collect 4 ore.'
-      : 'Forest Cleanup accepted: defeat 10 slimes and collect 5 herbs.' });
+      ? 'Elder Tarn: The wardstones are failing. Clear 8 goblins and bring 4 ore from the cave.'
+      : 'Elder Tarn: The broken seal has stirred the forest. Defeat 10 slimes and bring 5 herbs for the wards.' });
     this.sfx(client, 'ui');
     this.sendCharacter(client);
   }
@@ -2490,7 +2639,8 @@ export class World {
     if (recipe === 'potion') {
       result = { cost: { herb: 2, gold: 20 }, item: makeItem('Health Potion', 'consumable', 'common', {}, { icon: 'P', heal: 55, price: 20, desc: 'Restores 55 HP.' }) };
     } else if (recipe === 'sword') {
-      result = { cost: { ore: 3, gold: 60 }, item: makeItem('Runed Edge', 'weapon', 'rare', { attack: 12, crit: 0.02 }, { classId: client.character.classId, effect: 'flame', desc: 'A forged weapon made for your class.' }) };
+      if (client.character.classId !== 'swordsman') { this.error(client, 'Only Swordsmen can craft a sword.'); return; }
+      result = { cost: { ore: 3, gold: 60 }, item: makeItem('Runed Edge', 'weapon', 'rare', { attack: 12, crit: 0.02 }, { classId: 'swordsman', art: 'sword', effect: 'flame', desc: 'A forged blade for Swordsmen.' }) };
     } else if (recipe === 'armor') {
       result = { cost: { ore: 2, herb: 2, gold: 50 }, item: makeItem('Woven Guard', 'armor', 'rare', { hp: 24, defense: 5, manaRegen: 0.5 }, { classId: client.character.classId, effect: 'frost', desc: 'Sturdy armor woven for your class.' }) };
     } else {
@@ -2504,11 +2654,11 @@ export class World {
       this.error(client, 'You do not have the materials or gold for that recipe.');
       return;
     }
-    if ((client.character.inventory || []).length >= 20) { this.error(client, 'Inventory is full.'); return; }
+    if (!this.canAddItem(client, result.item)) { this.error(client, 'Inventory is full.'); return; }
 
     for (const key of ['herb', 'ore', 'essence']) materials[key] -= (result.cost[key] || 0);
     client.character.gold -= result.cost.gold || 0;
-    client.character.inventory.push(result.item);
+    this.addItem(client, result.item);
     this.event(client, 'system', { text: `Crafted ${result.item.name}!`, color: RARITY[result.item.rarity].color });
     this.sfx(client, 'pickup');
     this.sendCharacter(client);

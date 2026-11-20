@@ -28,11 +28,10 @@
   const DAY_LENGTH = 120;   // Seconds for a full day/night cycle.
   const TAU = Math.PI * 2;
 
-  const TILE_ID = { GRASS: 0, WATER: 1, TREE: 2, SAND: 3, ROCK: 4, CAVE: 5, CACTUS: 6 };
-  // Obstacles have been removed from the maps. Only ROCK (the outer cave/dungeon
-  // border) is solid, so scenery can never block attacks or trap a monster.
-  const BLOCKED_TILES = new Set([TILE_ID.ROCK]);
-  const PROJECTILE_BLOCKED_TILES = new Set([TILE_ID.ROCK]);
+  const TILE_ID = { GRASS: 0, WATER: 1, TREE: 2, SAND: 3, ROCK: 4, CAVE: 5, CACTUS: 6, PATH: 7, HOUSE_ROOF: 8, HOUSE_WALL: 9 };
+  // Trees, water, cacti, cave walls and village buildings are real obstacles.
+  const BLOCKED_TILES = new Set([TILE_ID.WATER, TILE_ID.TREE, TILE_ID.ROCK, TILE_ID.CACTUS, TILE_ID.HOUSE_ROOF, TILE_ID.HOUSE_WALL]);
+  const PROJECTILE_BLOCKED_TILES = new Set(BLOCKED_TILES);
 
   const CLASS_DATA = {
     swordsman: {
@@ -94,8 +93,43 @@
   }
 
   function itemCanEquip(item, classId) {
-    return !!item && (item.slot === 'weapon' || item.slot === 'armor') &&
-      (!item.classId || item.classId === classId);
+    if (!item || (item.slot !== 'weapon' && item.slot !== 'armor')) return false;
+    const requiredClass = item.slot === 'weapon' ? (weaponClassFor(item) || item.classId) : item.classId;
+    return !requiredClass || requiredClass === classId;
+  }
+
+  function weaponClassFor(item) {
+    if (!item || item.slot !== 'weapon') return null;
+    const role = Object.entries(ROLE_ITEM_DEFS).find(([id, def]) =>
+      item.art === ROLE_ITEM_ART[id] || item.name === def.name);
+    if (role) return role[0];
+    if (item.art === 'sword' || /sword|blade|runed edge/i.test(item.name || '')) return 'swordsman';
+    if (item.art === 'bow' || /\bbow\b/i.test(item.name || '')) return 'archer';
+    if (item.art === 'staff' || /staff|wand/i.test(item.name || '')) return 'mage';
+    return null;
+  }
+
+  function sameConsumableStack(a, b) {
+    return !!a && !!b && a.slot === 'consumable' && b.slot === 'consumable' &&
+      a.name === b.name && a.rarity === b.rarity && a.heal === b.heal &&
+      (a.teleportTo || null) === (b.teleportTo || null);
+  }
+
+  function itemSellValue(item) {
+    const unitValue = Math.max(1, Math.floor((Number(item && item.price) || 1) * 0.5));
+    const quantity = item && item.slot === 'consumable' ? clamp(Math.floor(Number(item.quantity) || 1), 1, 99) : 1;
+    return unitValue * quantity;
+  }
+
+  function compactInventory(items) {
+    const compact = [];
+    for (const item of items) {
+      const stack = compact.find(existing => sameConsumableStack(existing, item) &&
+        (existing.quantity || 1) + (item.quantity || 1) <= 99);
+      if (stack) stack.quantity = (stack.quantity || 1) + (item.quantity || 1);
+      else if (compact.length < 20) compact.push(item);
+    }
+    return compact;
   }
 
   // EXPANSION 5: talent tree + class specializations.
@@ -498,8 +532,8 @@
   function npcSprite(type, frame) {
     return cachedSprite(`npc_${type}_${frame}`, () => {
       const g = emptyGrid();
-      const robe = type === 'shop' ? '#b8793c' : '#6c76b8';
-      const trim = type === 'shop' ? '#ffd68a' : '#d5d9ff';
+      const robe = type === 'shop' ? '#b8793c' : type === 'guard' ? '#405c7e' : '#6c76b8';
+      const trim = type === 'shop' ? '#ffd68a' : type === 'guard' ? '#e7d38a' : '#d5d9ff';
       const bob = frame % 2;
       setRect(g, 5, 2 + bob, 6, 5, '#e8c29b');
       setRect(g, 4, 2 + bob, 8, 2, type === 'shop' ? '#7a4b27' : '#d9d9e8');
@@ -511,6 +545,12 @@
       if (type === 'shop') {
         setRect(g, 11, 8, 3, 4, '#8a5a32');       // little bag
         setPx(g, 12, 9, '#ffd45e');
+      } else if (type === 'guard') {
+        setRect(g, 3, 7 + bob, 2, 6, '#9aa8bd');
+        setRect(g, 2, 8 + bob, 3, 3, '#e7d38a');
+        setRect(g, 11, 8 + bob, 3, 2, '#9aa8bd');
+        setRect(g, 12, 3 + bob, 1, 6, '#d7e4ef');
+        setPx(g, 12, 2 + bob, '#ffd75e');
       } else {
         setRect(g, 12, 3, 1, 10, '#9a8060');      // staff
         setPx(g, 12, 2, '#9ce7ff');
@@ -540,7 +580,7 @@
   // Item images are generated from the same tiny pixel grid as characters, so
   // every item - including role relics - has art without external files.
   const ITEM_ART_KEYS = new Set([
-    'potion', 'sword', 'bow', 'staff', 'armor',
+    'potion', 'scroll', 'sword', 'bow', 'staff', 'armor',
     'roleSword', 'roleBow', 'roleStaff'
   ]);
 
@@ -548,6 +588,7 @@
     if (!item) return 'armor';
     if (ITEM_ART_KEYS.has(item.art)) return item.art;
     const name = String(item.name || '').toLowerCase();
+    if (item.teleportTo || name.includes('scroll')) return 'scroll';
     if (item.slot === 'consumable' || name.includes('potion')) return 'potion';
     if (name.includes('bow')) return 'bow';
     if (name.includes('staff') || name.includes('wand')) return 'staff';
@@ -580,6 +621,14 @@
         setPx(g, 6, 4, light);
         setPx(g, 10, 11, light);
         setRect(g, 5, 13, 6, 1, '#9aa7bd');
+      } else if (art === 'scroll') {
+        setRect(g, 4, 2, 8, 12, '#e8d5a6');
+        setRect(g, 3, 2, 10, 2, '#fff0c4');
+        setRect(g, 3, 12, 10, 2, '#c7a354');
+        setRect(g, 5, 5, 6, 1, '#7b67b2');
+        setRect(g, 5, 8, 5, 1, '#7b67b2');
+        setPx(g, 8, 6, '#ffd75e');
+        setPx(g, 7, 9, '#ffd75e');
       } else if (art === 'sword') {
         setPx(g, 7, 1, metal);
         setPx(g, 8, 1, metal);
@@ -678,9 +727,12 @@
   const tileCache = new Map();
 
   // STAGE 1: grass, water and trees. STAGE 3 adds sand, rock and cave tiles.
-  function tileCanvas(id) {
-    if (tileCache.has(id)) return tileCache.get(id);
-    const rng = mulberry32(100 + id * 37);
+  function tileCanvas(id, seed = 0) {
+    const variant = [TILE_ID.WATER, TILE_ID.TREE, TILE_ID.ROCK, TILE_ID.CACTUS, TILE_ID.HOUSE_ROOF, TILE_ID.HOUSE_WALL].includes(id)
+      ? Math.abs(Math.floor(seed)) % 4 : 0;
+    const cacheKey = `${id}:${variant}`;
+    if (tileCache.has(cacheKey)) return tileCache.get(cacheKey);
+    const rng = mulberry32(100 + id * 37 + variant * 109);
     const g = emptyGrid();
     if (id === TILE_ID.GRASS) {
       setRect(g, 0, 0, 16, 16, '#4f9d54');
@@ -689,27 +741,60 @@
     } else if (id === TILE_ID.WATER) {
       setRect(g, 0, 0, 16, 16, '#3178b8');
       for (let y = 2; y < 16; y += 4) {
-        setRect(g, 1 + (y % 3), y, 5, 1, '#54a5dc');
-        setRect(g, 9 - (y % 2), y + 1, 5, 1, '#225f9e');
+        setRect(g, 1 + (y % 3), y, 4 + variant % 3, 1, variant % 2 ? '#6ab8e8' : '#54a5dc');
+        setRect(g, 9 - (y % 2), y + 1, 5, 1, variant % 2 ? '#225f9e' : '#286ca8');
       }
     } else if (id === TILE_ID.TREE) {
       setRect(g, 0, 0, 16, 16, '#4f9d54');
+      const foliage = ['#2f7a3c', '#347f43', '#267542', '#3b7940'][variant];
+      const highlight = ['#62b95e', '#7acb68', '#55b66b', '#90c45a'][variant];
       setRect(g, 7, 9, 3, 5, '#6b4a2c');
-      setRect(g, 4, 2, 9, 7, '#2f7a3c');
-      setRect(g, 3, 4, 11, 4, '#2f7a3c');
-      setRect(g, 5, 3, 5, 2, '#46a14f');
+      setRect(g, 4, 2, 9, 7, foliage);
+      setRect(g, 3, 4, 11, 4, foliage);
+      setRect(g, 5, 3, 5, 2, highlight);
+      setRect(g, 4 + variant % 3, 6, 3, 2, highlight);
       setPx(g, 11, 6, '#1f5c30');
     } else if (id === TILE_ID.SAND) {
       setRect(g, 0, 0, 16, 16, '#d7bb76');
       for (let i = 0; i < 10; i++) setPx(g, Math.floor(rng() * 16), Math.floor(rng() * 16), rng() < 0.5 ? '#e3cc8b' : '#c5a866');
     } else if (id === TILE_ID.ROCK) {
+      const stone = ['#60667a', '#686b7c', '#5b6a72', '#6d6475'][variant];
       setRect(g, 0, 0, 16, 16, '#4b5061');
-      setRect(g, 1, 1, 14, 13, '#60667a');
-      setRect(g, 3, 3, 10, 9, '#737a90');
-      setPx(g, 5, 5, '#8c93a8'); setPx(g, 10, 9, '#414657');
+      setRect(g, 1 + variant % 2, 1, 14 - variant % 2, 13, stone);
+      setRect(g, 3, 3 + variant % 2, 10, 9, '#737a90');
+      setPx(g, 5 + variant % 3, 5, '#a1a9bb');
+      setPx(g, 8, 8 + variant % 3, '#414657');
+      setPx(g, 10, 4 + variant % 4, '#858ca0');
     } else if (id === TILE_ID.CAVE) {
       setRect(g, 0, 0, 16, 16, '#34384a');
       for (let i = 0; i < 9; i++) setPx(g, Math.floor(rng() * 16), Math.floor(rng() * 16), rng() < 0.6 ? '#3d4257' : '#2b2f40');
+    } else if (id === TILE_ID.PATH) {
+      setRect(g, 0, 0, 16, 16, '#a99472');
+      for (let y = 1; y < 16; y += 5) setRect(g, 1, y, 14, 1, '#c1ad89');
+      for (let x = 4; x < 16; x += 6) setPx(g, x, 3, '#8c795d');
+    } else if (id === TILE_ID.HOUSE_ROOF) {
+      setRect(g, 0, 0, 16, 16, '#85483c');
+      setRect(g, 1, 2, 14, 3, '#a95d48');
+      setRect(g, 2, 8, 12, 2, '#713b35');
+      setRect(g, 7, 1, 2, 3, '#d59b6c');
+    } else if (id === TILE_ID.HOUSE_WALL) {
+      setRect(g, 0, 0, 16, 16, '#c7a879');
+      setRect(g, 1, 1, 14, 2, '#dfc494');
+      setRect(g, 2, 5, 4, 5, '#6f91a4');
+      setRect(g, 3, 6, 2, 3, '#a8d8e8');
+      setRect(g, 10, 5, 4, 5, '#6f91a4');
+      setRect(g, 11, 6, 2, 3, '#a8d8e8');
+      setRect(g, 7, 9, 2, 7, '#69432f');
+    } else if (id === TILE_ID.CACTUS) {
+      setRect(g, 0, 0, 16, 16, '#d7bb76');
+      const cactus = ['#3f9c5e', '#4a9e5d', '#438e61', '#559c52'][variant];
+      const armY = 5 + variant % 4;
+      setRect(g, 7, 3, 2, 10, cactus);
+      setRect(g, 5, armY, 2, 4, cactus);
+      setRect(g, 9, Math.max(4, armY - 2), 2, 5, cactus);
+      setPx(g, 7, 2, '#8bd77a');
+      setPx(g, 8, 5, '#a5e88a');
+      setPx(g, 11, 7, '#a5e88a');
     } else {
       setRect(g, 0, 0, 16, 16, '#d7bb76');
       setRect(g, 7, 3, 2, 10, '#3f9c5e');
@@ -718,11 +803,11 @@
       setPx(g, 7, 2, '#62c47d');
     }
     const c = gridToCanvas(g);
-    tileCache.set(id, c);
+    tileCache.set(cacheKey, c);
     return c;
   }
 
-  const MINIMAP_COLORS = ['#3f8f48', '#2f6fae', '#256437', '#c4a867', '#555a6b', '#34384a', '#4f9c62'];
+  const MINIMAP_COLORS = ['#3f8f48', '#2f6fae', '#256437', '#c4a867', '#555a6b', '#34384a', '#4f9c62', '#a99472', '#85483c', '#c7a879'];
 
   // ============================================================
   // 3. ITEMS, AUDIO, AND SMALL VISUAL CLASSES
@@ -790,8 +875,17 @@
       art: extra.art || null,
       price: extra.price || Math.round(25 * RARITY[rarity].mult),
       heal: extra.heal || 0,
+      quantity: slot === 'consumable' ? clamp(Math.floor(Number(extra.quantity) || 1), 1, 99) : 1,
+      teleportTo: extra.teleportTo || null,
       desc: extra.desc || ''
     };
+  }
+
+  function teleportScroll() {
+    return makeItem('Village Teleport Scroll', 'consumable', 'rare', {}, {
+      art: 'scroll', icon: 'T', price: 55, teleportTo: 'village',
+      desc: 'A one-use scroll that teleports you to Hearthvale Village.'
+    });
   }
 
   function starterItems(classId) {
@@ -805,8 +899,7 @@
     return {
       equipment: { weapon, armor },
       inventory: [
-        makeItem('Health Potion', 'consumable', 'common', {}, { art: 'potion', icon: 'P', heal: 55, price: 20, desc: 'Restores 55 HP.' }),
-        makeItem('Health Potion', 'consumable', 'common', {}, { art: 'potion', icon: 'P', heal: 55, price: 20, desc: 'Restores 55 HP.' })
+        makeItem('Health Potion', 'consumable', 'common', {}, { art: 'potion', icon: 'P', heal: 55, quantity: 2, price: 20, desc: 'Restores 55 HP.' })
       ]
     };
   }
@@ -815,11 +908,7 @@
     const rarities = ['common', 'rare', 'rare', 'epic'];
     const rarity = rarities[index % rarities.length];
     const mult = RARITY[rarity].mult;
-    if (index % 3 === 2) {
-      return makeItem('Greater Potion', 'consumable', rarity, {}, {
-        art: 'potion', icon: 'P', heal: Math.round(90 * mult), price: Math.round(35 * mult), desc: 'A stronger healing potion.'
-      });
-    }
+    if (index % 3 === 2) return teleportScroll();
     const kind = index % 2 === 0 ? 'weapon' : 'armor';
     if (kind === 'weapon') {
       const weapon = classId === 'archer'
@@ -872,10 +961,11 @@
     const rarity = RARITY[raw.rarity] ? raw.rarity : 'common';
     const roleClassId = Object.entries(ROLE_ITEM_DEFS)
       .find(([id, def]) => raw.art === ROLE_ITEM_ART[id] || raw.name === def.name)?.[0];
+    const classByWeaponType = weaponClassFor({ slot, art: raw.art, name: raw.name });
     return makeItem(String(raw.name || 'Item'), slot, rarity, raw.stats || {}, {
       // Keep the server UID: equip/enchant/mail/auction actions all refer to it.
       uid: raw.uid,
-      classId: raw.classId || roleClassId || (slot === 'weapon' || slot === 'armor' ? defaultClassId : null),
+      classId: roleClassId || classByWeaponType || raw.classId || (slot === 'weapon' || slot === 'armor' ? defaultClassId : null),
       spriteColor: raw.spriteColor,
       color: raw.color,
       effect: raw.effect,
@@ -884,6 +974,8 @@
       art: raw.art,
       price: raw.price,
       heal: raw.heal,
+      quantity: raw.quantity,
+      teleportTo: raw.teleportTo,
       desc: raw.desc
     });
   }
@@ -1089,6 +1181,7 @@
       this.age = 0;
       this.collected = false;
       this.petPull = false;
+      this.fullBagNoticeAt = -Infinity;
       // XP should be visible for a moment before the magnet takes it.
       this.dropDelay = kind === 'xp' ? 0.16 : 0;
     }
@@ -1374,8 +1467,8 @@
     recalculateStats(clampValues = true) {
       const base = CLASS_DATA[this.classId];
       const lv = this.level - 1;
-      const weapon = this.equipment.weapon ? this.equipment.weapon.stats : {};
-      const armor = this.equipment.armor ? this.equipment.armor.stats : {};
+      const weapon = this.equipment.weapon && itemCanEquip(this.equipment.weapon, this.classId) ? this.equipment.weapon.stats : {};
+      const armor = this.equipment.armor && itemCanEquip(this.equipment.armor, this.classId) ? this.equipment.armor.stats : {};
       const t = this.talents || {};
       // These modifiers mirror the authoritative server formulas so offline and
       // online characters feel the same.
@@ -1702,8 +1795,23 @@
       game.save();
     }
 
+    canAddItem(item) {
+      if (!item) return false;
+      const quantity = item.slot === 'consumable' ? clamp(Math.floor(Number(item.quantity) || 1), 1, 99) : 1;
+      const stack = this.inventory.find(existing => sameConsumableStack(existing, item) && (existing.quantity || 1) < 99);
+      return this.inventory.length < 20 || !!stack && (stack.quantity || 1) + quantity <= 99;
+    }
+
     addItem(item) {
-      if (this.inventory.length >= 20) return false;
+      if (!this.canAddItem(item)) return false;
+      item.quantity = item.slot === 'consumable' ? clamp(Math.floor(Number(item.quantity) || 1), 1, 99) : 1;
+      const stack = this.inventory.find(existing => sameConsumableStack(existing, item) && (existing.quantity || 1) < 99);
+      if (stack) {
+        const total = (stack.quantity || 1) + item.quantity;
+        if (total <= 99) { stack.quantity = total; return true; }
+        stack.quantity = 99;
+        item.quantity = total - 99;
+      }
       this.inventory.push(item);
       return true;
     }
@@ -1721,12 +1829,23 @@
     usePotion(index, game) {
       const item = this.inventory[index];
       if (!item || item.slot !== 'consumable') return false;
+      if (item.teleportTo === 'village') {
+        if (game.zoneId === 'village') {
+          game.addFloater(this.x, this.y - 40, 'Already in the village', '#9aa6bd', 10);
+          return false;
+        }
+        if ((item.quantity || 1) > 1) item.quantity--;
+        else this.inventory.splice(index, 1);
+        game.teleportToVillage();
+        return true;
+      }
       if (this.hp >= this.maxHp) {
         game.addFloater(this.x, this.y - 40, 'HP is full', '#9aa6bd', 10);
         return false;
       }
       const healed = this.heal(item.heal || 50);
-      this.inventory.splice(index, 1);
+      if ((item.quantity || 1) > 1) item.quantity--;
+      else this.inventory.splice(index, 1);
       game.addFloater(this.x, this.y - 42, `+${healed}`, '#7bff9b', 14);
       game.audio.sfx('pickup');
       game.save();
@@ -1748,7 +1867,11 @@
         ? clamp(Math.floor((1 - this.attackAnim / 0.35) * 4), 0, 3)
         : this.walkFrame;
       const blink = this.invuln > 0 && Math.floor(game.time * 18) % 2 === 0;
-      drawSprite(ctx, playerSprite(this.classId, frame, attacking, this.equipment, {
+      const visibleEquipment = {
+        weapon: this.equipment.weapon && itemCanEquip(this.equipment.weapon, this.classId) ? this.equipment.weapon : null,
+        armor: this.equipment.armor && itemCanEquip(this.equipment.armor, this.classId) ? this.equipment.armor : null
+      };
+      drawSprite(ctx, playerSprite(this.classId, frame, attacking, visibleEquipment, {
         spec: this.spec, casting: this.skillAnim > 0
       }), this.x, this.y, SPRITE_SCALE, blink ? 0.45 : 1);
       drawNameTag(ctx, this.name, `Lv ${this.level} ${CLASS_DATA[this.classId].name}`, this.x, this.y - 42, CLASS_DATA[this.classId].color);
@@ -2066,6 +2189,10 @@
           ctx.font = 'bold 20px monospace';
           ctx.fillText('!', this.x, this.y - 52 + Math.sin(game.time * 4) * 2);
         }
+      } else if (this.type === 'guard') {
+        ctx.fillStyle = '#9ce7ff';
+        ctx.font = 'bold 9px monospace';
+        ctx.fillText('◆', this.x, this.y - 51);
       }
       ctx.restore();
     }
@@ -2233,7 +2360,8 @@
     forest: { x: 520, y: 420 },
     cave: { x: 270, y: 300 },
     desert: { x: 2780, y: 1980 },
-    dungeon: { x: 768, y: 576 }
+    dungeon: { x: 768, y: 576 },
+    village: { x: 1552, y: 1168 }
   };
 
   const PORTAL_DEFS = {
@@ -2251,6 +2379,9 @@
     ],
     dungeon: [
       { x: 768, y: 120, to: 'forest', label: 'Exit Raid', color: '#7bdc7b', arrive: { x: 520, y: 420 } }
+    ],
+    village: [
+      { x: 1552, y: 656, to: 'forest', label: 'Forest Gate', color: '#7bdc7b', arrive: { x: 520, y: 420 } }
     ]
   };
 
@@ -2258,22 +2389,42 @@
     { type: 'shop', name: 'Merchant Mina', x: 620, y: 380 },
     { type: 'quest', name: 'Elder Tarn', x: 770, y: 430 }
   ];
+  const VILLAGE_NPC_DEFS = [
+    { type: 'guard', name: 'Village Guard', x: 1650, y: 1168 }
+  ];
 
   const BOSS_POS = { x: 1560, y: 1120 };
   const ZONE_ENEMY_COUNTS = {
     forest: { slime: 15, goblin: 6 },
     cave: { slime: 6, goblin: 7, brute: 4 },
     desert: { slime: 8, goblin: 9, scout: 4 },
-    dungeon: { goblin: 6 }
+    dungeon: { goblin: 6 },
+    village: {}
   };
-  const ZONE_MUL = { forest: 1, cave: 1.7, desert: 2.4, dungeon: 2.6 };
+  const ZONE_MUL = { forest: 1, cave: 1.7, desert: 2.4, dungeon: 2.6, village: 1 };
 
   const ZONE_POINTS = {
     forest: [ZONE_SPAWN.forest, ...PORTAL_DEFS.forest.map(p => p.arrive), ...NPC_DEFS],
     cave: [ZONE_SPAWN.cave, ...PORTAL_DEFS.cave.map(p => p.arrive), BOSS_POS],
     desert: [ZONE_SPAWN.desert, ...PORTAL_DEFS.desert.map(p => p.arrive)],
-    dungeon: [ZONE_SPAWN.dungeon, ...PORTAL_DEFS.dungeon.map(p => p.arrive)]
+    dungeon: [ZONE_SPAWN.dungeon, ...PORTAL_DEFS.dungeon.map(p => p.arrive)],
+    village: [ZONE_SPAWN.village, ...PORTAL_DEFS.village.map(p => p.arrive), ...VILLAGE_NPC_DEFS]
   };
+
+  function paintVillage(zone) {
+    const put = (x, y, tile) => {
+      if (x >= 0 && y >= 0 && x < zone.w && y < zone.h) zone.tiles[y * zone.w + x] = tile;
+    };
+    for (let x = 24; x <= 72; x++) { put(x, 35, TILE_ID.PATH); put(x, 36, TILE_ID.PATH); }
+    for (let y = 18; y <= 52; y++) { put(47, y, TILE_ID.PATH); put(48, y, TILE_ID.PATH); }
+    for (let y = 31; y <= 40; y++) for (let x = 43; x <= 52; x++) {
+      if (Math.hypot(x - 47.5, y - 35.5) <= 5) put(x, y, TILE_ID.PATH);
+    }
+    for (const [x, y] of [[33, 25], [56, 25], [33, 43], [56, 43]]) {
+      for (let dy = 0; dy < 4; dy++) for (let dx = 0; dx < 7; dx++) put(x + dx, y + dy, TILE_ID.HOUSE_ROOF);
+      for (let dy = 4; dy < 8; dy++) for (let dx = 0; dx < 7; dx++) put(x + dx, y + dy, TILE_ID.HOUSE_WALL);
+    }
+  }
 
   function createZone(id) {
     const isArena = id === 'dungeon';
@@ -2281,7 +2432,7 @@
     const h = isArena ? 36 : 72;
     const tiles = new Uint8Array(w * h);
     const base = id === 'cave' || isArena ? TILE_ID.CAVE
-      : id === 'forest' ? TILE_ID.GRASS : TILE_ID.SAND;
+      : id === 'forest' || id === 'village' ? TILE_ID.GRASS : TILE_ID.SAND;
 
     // Start with open terrain and a cave/dungeon border. Decorative patches follow.
     for (let y = 0; y < h; y++) {
@@ -2291,8 +2442,7 @@
         tiles[y * w + x] = border ? TILE_ID.ROCK : base;
       }
     }
-    // Add small, decorative landmarks. These tiles remain walkable; they give
-    // each region a stronger identity without creating combat choke points.
+    // Add small, deterministic obstacle patches and clear rings around landmarks.
     if (id === 'forest' || id === 'desert') {
       const rng = mulberry32(id === 'forest' ? 4101 : 4103);
       const safePoints = [ZONE_SPAWN[id], ...PORTAL_DEFS[id].flatMap(p => [p, p.arrive]),
@@ -2318,9 +2468,10 @@
         }
       }
     }
+    if (id === 'village') paintVillage({ w, h, tiles });
     return {
       id, w, h, tiles, pixelW: w * TILE, pixelH: h * TILE,
-      name: isArena ? 'Raid Arena' : id[0].toUpperCase() + id.slice(1)
+      name: isArena ? 'Raid Arena' : id === 'village' ? 'Hearthvale Village' : id[0].toUpperCase() + id.slice(1)
     };
   }
 
@@ -2572,13 +2723,14 @@
       this.ctx = canvas.getContext('2d');
       this.ctx.imageSmoothingEnabled = false;
 
-      this.state = 'select';
+      this.state = 'intro';
       this.paused = false;
       this.panel = null;              // 'inventory' | 'skills' | 'shop' | 'quest' | ...
       this.selectedClass = 'swordsman';
       this.nameInput = 'Hero';
       this.nameFocused = false;
       this.loginFields = { username: '', password: '', active: 'username' };
+      this.loginReturnState = 'select';
       this.network = new NetworkClient(this);
       this.networkData = { auction: [], mail: [], guild: null, shop: [] };
       this.selectedItemUid = null;
@@ -2605,7 +2757,8 @@
         forest: createZone('forest'),
         cave: createZone('cave'),
         desert: createZone('desert'),
-        dungeon: createZone('dungeon')
+        dungeon: createZone('dungeon'),
+        village: createZone('village')
       };
       this.zoneId = 'forest';
       this.zone = this.zones.forest;
@@ -2835,7 +2988,8 @@
       if (document.activeElement === this.nativeTextInput) {
         if (k === 'enter') {
           e.preventDefault();
-          if (this.state === 'select') this.startNewGame();
+          if (this.state === 'intro') this.showClassSelect();
+          else if (this.state === 'select') this.startNewGame();
           else if (this.state === 'login' && this.loginFields.active === 'username') {
             this.loginFields.active = 'password';
             this.textField = 'loginPass';
@@ -2848,7 +3002,7 @@
           this.syncNativeTextInputOverlay(true);
         } else if (k === 'escape') {
           e.preventDefault();
-          if (this.state === 'login') this.state = 'select';
+          if (this.state === 'login') this.state = this.loginReturnState;
           else this.nameFocused = false;
           this.nativeTextInput.blur();
         }
@@ -2873,12 +3027,18 @@
         if (k === 'enter') this.startNewGame();
         else if (k === 'c' && this.saveData) this.loadGame();
         else if (k === 'o') this.openLogin();
+        else if (k === 'escape') this.state = 'intro';
+        return;
+      }
+      if (this.state === 'intro') {
+        if (k === 'enter') this.showClassSelect();
+        else if (k === 'c' && this.saveData) this.loadGame();
         return;
       }
 
       // EXPANSION 2: on-canvas account login/register.
       if (this.state === 'login') {
-        if (k === 'escape') { this.state = 'select'; return; }
+        if (k === 'escape') { this.state = this.loginReturnState; return; }
         if (k === 'tab') {
           this.loginFields.active = this.loginFields.active === 'username' ? 'password' : 'username';
           return;
@@ -2973,8 +3133,7 @@
         case 'tab': this.cycleLockTarget(e.shiftKey ? -1 : 1); break;
         case 'l': this.toggleLockTarget(); break;
         case 'q':
-          if (this.network.online) this.network.send({ type: 'potion' });
-          else if (this.player) { const idx = this.player.inventory.findIndex(it => it.slot === 'consumable'); if (idx >= 0) this.player.usePotion(idx, this); }
+          this.useConsumable();
           break;
         case 'enter': this.clearInput(); this.chatOpen = true; this.chatInput = ''; break;
         case 'escape': this.clearInput(); this.paused = true; this.audio.sfx('ui'); break;
@@ -3041,7 +3200,7 @@
       if (this.panel === 'inventory') {
         const src = this.findDropRegion(p.x, p.y);
         if (src && src.item) {
-          if (src.source.type === 'inv') this.selectedItemUid = src.item.uid;
+          this.selectedItemUid = src.item.uid;
           const key = src.source.type + ':' + (src.source.index !== undefined ? src.source.index : src.source.slot);
           const now = performance.now();
           if (this.lastClick.key === key && now - this.lastClick.time < 320) {
@@ -3600,7 +3759,7 @@
       p.talents = Object.assign({ power: 0, haste: 0, vigor: 0, crit: 0, guard: 0, focus: 0 }, char.talents || {});
       p.materials = Object.assign({ herb: 0, ore: 0, essence: 0 }, char.materials || {});
       p.inventory = Array.isArray(char.inventory)
-        ? char.inventory.map(item => normalizeItem(item, classId)).filter(Boolean).slice(0, 20) : p.inventory;
+        ? compactInventory(char.inventory.map(item => normalizeItem(item, classId)).filter(Boolean)) : p.inventory;
       const eq = char.equipment || {};
       p.equipment = {
         weapon: normalizeItem(eq.weapon, classId),
@@ -3663,11 +3822,11 @@
       const h = Math.max(1, Number(init.h) || 72);
       const raw = Array.isArray(init.tiles) ? init.tiles : [];
       const tiles = new Uint8Array(w * h);
-      for (let i = 0; i < tiles.length; i++) tiles[i] = clamp(Number(raw[i]) || 0, 0, 6);
+      for (let i = 0; i < tiles.length; i++) tiles[i] = clamp(Number(raw[i]) || 0, 0, 9);
       const zone = {
         id: zoneId, w, h, tiles,
         pixelW: w * TILE, pixelH: h * TILE,
-        name: zoneId === 'dungeon' ? 'Raid Arena' : zoneId[0].toUpperCase() + zoneId.slice(1)
+        name: zoneId === 'dungeon' ? 'Raid Arena' : zoneId === 'village' ? 'Hearthvale Village' : zoneId[0].toUpperCase() + zoneId.slice(1)
       };
       this.zoneId = zoneId;
       this.zone = zone;
@@ -3677,7 +3836,8 @@
       this.lockedTargetId = null;
       this.portals = (Array.isArray(init.portals) ? init.portals : []).map(p => Object.assign({}, p, { radius: 30 }));
       // Keep the same NPC coordinates as the server so F opens shop/quest online.
-      this.npcs = zoneId === 'forest' ? NPC_DEFS.map(n => new Npc(n.type, n.name, n.x, n.y)) : [];
+      this.npcs = zoneId === 'forest' ? NPC_DEFS.map(n => new Npc(n.type, n.name, n.x, n.y))
+        : zoneId === 'village' ? VILLAGE_NPC_DEFS.map(n => new Npc(n.type, n.name, n.x, n.y)) : [];
       this.minimapCache = null;
       this.enemies = [];
       this.projectiles = [];
@@ -3976,6 +4136,7 @@
     // ---------- Starting, saving and loading ----------
 
     openLogin() {
+      this.loginReturnState = this.state === 'login' ? this.loginReturnState : this.state;
       this.clearInput();
       this.network.connect();
       this.state = 'login';
@@ -4006,12 +4167,20 @@
       this.pet = null;
       this.party = [];
       this.networkData.guild = null;
-      this.state = 'select';
+      this.state = 'intro';
       this.paused = false;
       this.panel = null;
       this.chatOpen = false;
       this.textField = null;
       this.lockedTargetId = null;
+    }
+
+    showClassSelect() {
+      this.audio.unlock();
+      this.clearInput();
+      this.nameFocused = false;
+      this.state = 'select';
+      this.audio.sfx('ui');
     }
 
     startNewGame() {
@@ -4102,7 +4271,7 @@
       player.gold = data.gold || 0;
       player.skillPoints = data.skillPoints || 0;
       player.skillRanks = Array.isArray(data.skillRanks) && data.skillRanks.length === 3 ? data.skillRanks.map(v => clamp(v | 0, 1, 5)) : [1, 1, 1];
-      player.inventory = Array.isArray(data.inventory) ? data.inventory.map(item => normalizeItem(item, classId)).filter(Boolean).slice(0, 20) : [];
+      player.inventory = Array.isArray(data.inventory) ? compactInventory(data.inventory.map(item => normalizeItem(item, classId)).filter(Boolean)) : [];
       const eq = data.equipment || {};
       player.equipment = {
         weapon: normalizeItem(eq.weapon, classId),
@@ -4154,7 +4323,8 @@
       this.floaters = [];
       this.pendingMeteors = [];
       this.portals = PORTAL_DEFS[this.zoneId].map(p => Object.assign({}, p, { radius: 30 }));
-      this.npcs = this.zoneId === 'forest' ? NPC_DEFS.map(n => new Npc(n.type, n.name, n.x, n.y)) : [];
+      this.npcs = this.zoneId === 'forest' ? NPC_DEFS.map(n => new Npc(n.type, n.name, n.x, n.y))
+        : this.zoneId === 'village' ? VILLAGE_NPC_DEFS.map(n => new Npc(n.type, n.name, n.x, n.y)) : [];
 
       const counts = ZONE_ENEMY_COUNTS[this.zoneId];
       const mul = ZONE_MUL[this.zoneId];
@@ -4242,6 +4412,13 @@
       this.save();
     }
 
+    teleportToVillage() {
+      if (!this.zones.village || this.zoneId === 'village') return false;
+      this.travelTo({ to: 'village', arrive: ZONE_SPAWN.village });
+      this.addFloater(this.player.x, this.player.y - 48, 'Teleported to Hearthvale', '#c9a6ff', 11);
+      return true;
+    }
+
     // ---------- Combat ----------
 
     damageEnemy(enemy, amount, source, crit = false, kind = 'hit', opts = {}) {
@@ -4294,12 +4471,18 @@
       if (enemy.type === 'boss') {
         this.bossDefeated = true;
         const rarity = Math.random() < 0.5 ? 'epic' : 'rare';
+        const isWeapon = Math.random() < 0.6;
+        const classWeapon = {
+          swordsman: { name: 'Sovereign Blade', art: 'sword' },
+          archer: { name: 'Sovereign Bow', art: 'bow' },
+          mage: { name: 'Sovereign Staff', art: 'staff' }
+        }[this.player.classId];
         const item = makeItem(
-          rarity === 'epic' ? 'Cave Sovereign Relic' : 'Boss-Slayer Charm',
-          Math.random() < 0.6 ? 'weapon' : 'armor',
+          isWeapon ? classWeapon.name : 'Boss-Slayer Charm',
+          isWeapon ? 'weapon' : 'armor',
           rarity,
           rarity === 'epic' ? { attack: 14, hp: 30, defense: 6 } : { attack: 9, hp: 18, defense: 3 },
-          { classId: this.player.classId, effect: pick(['flame', 'frost', 'void', 'thunder']), desc: 'Forged in the heart of the dungeon.' }
+          { classId: this.player.classId, art: isWeapon ? classWeapon.art : 'armor', effect: pick(['flame', 'frost', 'void', 'thunder']), desc: 'Forged in the heart of the dungeon for your class.' }
         );
         this.pickups.push(new Pickup('chest', enemy.x, enemy.y, 1, item));
         this.audio.sfx('boss');
@@ -4329,8 +4512,15 @@
 
     collectPickup(p) {
       if (p.collected) return;
-      p.collected = true;
       const pl = this.player;
+      if (p.kind === 'item' && !pl.canAddItem(p.item)) {
+        if (this.time - p.fullBagNoticeAt > 1.5) {
+          this.addFloater(pl.x, pl.y - 42, 'Inventory full', '#ff9b9b', 10);
+          p.fullBagNoticeAt = this.time;
+        }
+        return;
+      }
+      p.collected = true;
       if (p.kind === 'gold') {
         pl.gold += p.amount;
         this.addFloater(pl.x, pl.y - 46, `+${p.amount} gold`, '#ffd75e', 11);
@@ -4354,13 +4544,9 @@
           this.addFloater(pl.x, pl.y - 46, 'Ore', '#9ce7ff', 10);
         }
       } else {
-        if (!pl.addItem(p.item)) {
-          pl.gold += 15;
-          this.addFloater(pl.x, pl.y - 46, 'Inventory full: +15g', '#ffd75e', 10);
-        } else {
-          this.addFloater(pl.x, pl.y - 46, `Found ${p.item.name}`, RARITY[p.item.rarity].color, 11);
-          if (p.item.rarity !== 'common') this.log(`You found a ${p.item.rarity} item: ${p.item.name}!`, RARITY[p.item.rarity].color);
-        }
+        if (!pl.addItem(p.item)) { p.collected = false; return; }
+        this.addFloater(pl.x, pl.y - 46, `Found ${p.item.name}`, RARITY[p.item.rarity].color, 11);
+        if (p.item.rarity !== 'common') this.log(`You found a ${p.item.rarity} item: ${p.item.name}!`, RARITY[p.item.rarity].color);
         this.save();
       }
       this.audio.sfx('pickup');
@@ -4403,14 +4589,17 @@
         return;
       }
       if (dist(this.player, chest) >= 76) return;
+      if (chest.item && !this.player.canAddItem(chest.item)) {
+        this.log('Inventory is full. Make room before opening this chest.', '#ff9b9b');
+        return;
+      }
       chest.collected = true;
       const item = chest.item;
       if (item && this.player.addItem(item)) {
         this.addFloater(this.player.x, this.player.y - 46, `Found ${item.name}`, RARITY[item.rarity].color, 11);
         this.log(`Boss chest: ${item.name}!`, RARITY[item.rarity].color);
       } else {
-        this.player.gold += 100;
-        this.addFloater(this.player.x, this.player.y - 46, 'Chest: +100 gold', '#ffd75e', 11);
+        this.log('The chest has no reward item.', '#ffcf70');
       }
       this.audio.sfx('pickup');
       this.save();
@@ -4426,6 +4615,9 @@
         else this.travelTo(found.obj);
       } else if (found.obj.type === 'shop') {
         this.panel = 'shop';
+        this.audio.sfx('ui');
+      } else if (found.obj.type === 'guard') {
+        this.log('Village Guard: The wardstones are dimming. I heard something wake beneath Mount Veyr.', '#9ce7ff');
         this.audio.sfx('ui');
       } else {
         this.panel = 'quest';
@@ -4499,10 +4691,14 @@
       if (this.network.online) { this.network.send({ type: 'questAccept' }); return; }
       if (this.quest.claimed) return;
       if (this.quest.complete) { this.turnInQuest(); return; }
+      if (this.quest.active) {
+        this.log('Quest already accepted. Finish the objectives and turn it in for your reward.', '#ffcf70');
+        return;
+      }
       this.quest.active = true;
       this.log(this.quest.stage === 2
-        ? 'Cave Patrol accepted: defeat 8 goblins and collect 4 ore.'
-        : 'Forest Cleanup accepted: defeat 10 slimes and collect 5 herbs.', '#ffd75e');
+        ? 'Elder Tarn: The wardstones are failing. Clear 8 goblins and bring 4 ore from the cave.'
+        : 'Elder Tarn: The broken seal has stirred the forest. Defeat 10 slimes and bring 5 herbs for the wards.', '#ffd75e');
       this.save();
     }
 
@@ -4591,6 +4787,21 @@
       this.log(`You specialized as ${spec.id}!`, '#ffd75e');
       this.audio.sfx('level');
       this.save();
+    }
+
+    useConsumable() {
+      const p = this.player;
+      if (!p) return;
+      const selected = p.inventory.find(item => item.uid === this.selectedItemUid && item.slot === 'consumable');
+      if (this.network.online) {
+        if (selected) this.network.send({ type: 'usePotion', uid: selected.uid });
+        else this.network.send({ type: 'potion' });
+        return;
+      }
+      let index = selected ? p.inventory.indexOf(selected)
+        : p.inventory.findIndex(item => item.slot === 'consumable' && item.heal > 0);
+      if (index < 0) index = p.inventory.findIndex(item => item.slot === 'consumable' && item.teleportTo);
+      if (index >= 0) p.usePotion(index, this);
     }
 
     quickUseItem(item, source) {
@@ -4734,6 +4945,9 @@
       }
 
       switch (action) {
+        case 'beginStory': this.showClassSelect(); break;
+        case 'continueFromIntro': this.loadGame(); break;
+        case 'backToIntro': this.state = 'intro'; this.nameFocused = false; break;
         case 'start': this.startNewGame(); break;
         case 'continue': this.loadGame(); break;
         case 'focusName':
@@ -4741,7 +4955,7 @@
           this.syncNativeTextInputOverlay(true);
           break;
         case 'openLogin': this.openLogin(); break;
-        case 'loginBack': this.state = 'select'; break;
+        case 'loginBack': this.state = this.loginReturnState; break;
         case 'loginUser':
           this.loginFields.active = 'username';
           this.syncNativeTextInputOverlay(true);
@@ -4772,8 +4986,7 @@
         case 'partyLeave': this.leaveParty(); break;
         case 'partyDisband': this.disbandParty(); break;
         case 'potion':
-          if (this.network.online) this.network.send({ type: 'potion' });
-          else if (this.player) { const idx = this.player.inventory.findIndex(it => it.slot === 'consumable'); if (idx >= 0) this.player.usePotion(idx, this); }
+          this.useConsumable();
           break;
         case 'chat': this.chatOpen = true; this.chatInput = ''; break;
         case 'chatZone': this.chatChannel = 'zone'; this.chatOpen = true; break;
@@ -4797,6 +5010,37 @@
             break;
           }
           this.quickUseItem(item, { type: 'inv' });
+          this.selectedItemUid = null;
+          break;
+        }
+        case 'sellSelectedItem': {
+          const item = this.player && this.player.inventory.find(it => it.uid === this.selectedItemUid);
+          if (!item) { this.log('Select an item in your bag to sell.', '#ffcf70'); break; }
+          if (this.network.online) {
+            this.network.send({ type: 'sellItem', uid: item.uid });
+          } else {
+            const value = itemSellValue(item);
+            this.player.inventory = this.player.inventory.filter(it => it.uid !== item.uid);
+            this.player.gold += value;
+            this.addFloater(this.player.x, this.player.y - 44, `+${value} gold`, '#ffd75e', 12);
+            this.log(`Sold ${item.name} for ${value} gold.`, '#ffd75e');
+            this.audio.sfx('pickup');
+            this.save();
+          }
+          this.selectedItemUid = null;
+          break;
+        }
+        case 'discardSelectedItem': {
+          const item = this.player && this.player.inventory.find(it => it.uid === this.selectedItemUid);
+          if (!item) { this.log('Select an item in your bag to discard.', '#ffcf70'); break; }
+          if (this.network.online) {
+            this.network.send({ type: 'discardItem', uid: item.uid });
+          } else {
+            this.player.inventory = this.player.inventory.filter(it => it.uid !== item.uid);
+            this.log(`Discarded ${item.name}.`, '#9fb0cd');
+            this.audio.sfx('ui');
+            this.save();
+          }
           this.selectedItemUid = null;
           break;
         }
@@ -4839,7 +5083,7 @@
           break;
         case 'quitToSelect':
           if (this.network.online) this.leaveOnline();
-          else { this.save(); this.state = 'select'; this.paused = false; this.panel = null; }
+          else { this.save(); this.state = 'intro'; this.paused = false; this.panel = null; }
           break;
         case 'volumeDown': this.changeVolume(-0.05); break;
         case 'volumeUp': this.changeVolume(0.05); break;
@@ -4975,6 +5219,11 @@
       this.clickRegions = [];
       this.dropRegions = [];
 
+      if (this.state === 'intro') {
+        this.drawIntroScreen();
+        this.drawDraggedItem();
+        return;
+      }
       if (this.state === 'select') {
         this.drawSelectScreen();
         this.drawDraggedItem();
@@ -5034,9 +5283,10 @@
       for (let ty = sy; ty <= ey; ty++) {
         for (let tx = sx; tx <= ex; tx++) {
           const id = this.zone.tiles[ty * this.zone.w + tx];
-          ctx.drawImage(tileCanvas(id), tx * TILE, ty * TILE, TILE, TILE);
+          ctx.drawImage(tileCanvas(id, tx * 17 + ty * 29), tx * TILE, ty * TILE, TILE, TILE);
         }
       }
+      this.drawTerrainAnimations(sx, sy, ex, ey);
 
       // Portals glow and pulse.
       for (const p of this.portals) {
@@ -5080,6 +5330,67 @@
       this.drawLockTarget();
       this.drawSkillTargetPreview();
       for (const f of this.floaters) f.draw(ctx);
+      ctx.restore();
+    }
+
+    drawTerrainAnimations(sx, sy, ex, ey) {
+      const ctx = this.ctx;
+      ctx.save();
+      for (let ty = sy; ty <= ey; ty++) {
+        for (let tx = sx; tx <= ex; tx++) {
+          const id = this.zone.tiles[ty * this.zone.w + tx];
+          const x = tx * TILE;
+          const y = ty * TILE;
+          const hash = Math.abs((tx * 73856093) ^ (ty * 19349663));
+          if (id === TILE_ID.WATER) {
+            const shimmer = (this.time * 28 + hash % TILE) % TILE;
+            ctx.globalAlpha = 0.42;
+            ctx.strokeStyle = '#a8e6ff';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(x + shimmer * 0.25, y + 7 + (hash % 12));
+            ctx.lineTo(x + 7 + shimmer * 0.25, y + 7 + (hash % 12));
+            ctx.moveTo(x + 15 - shimmer * 0.2, y + 22 - (hash % 7));
+            ctx.lineTo(x + 23 - shimmer * 0.2, y + 22 - (hash % 7));
+            ctx.stroke();
+            ctx.globalAlpha = 1;
+          } else if (id === TILE_ID.TREE) {
+            const sway = Math.sin(this.time * 2.4 + hash % 100) * 2.2;
+            ctx.fillStyle = 'rgba(174,238,132,0.72)';
+            ctx.beginPath();
+            ctx.ellipse(x + 17 + sway, y + 10, 5, 2.2, sway * 0.04, 0, TAU);
+            ctx.fill();
+            if (hash % 4 === 0) {
+              const fall = (this.time * 13 + hash % 48) % 28;
+              const leafX = x + 8 + (hash % 15) + Math.sin(this.time * 2 + hash) * 3;
+              ctx.save();
+              ctx.translate(leafX, y + fall);
+              ctx.rotate(Math.sin(this.time * 3 + hash) * 0.8);
+              ctx.fillStyle = '#c5ef86';
+              ctx.fillRect(-2, -1, 4, 2);
+              ctx.restore();
+            }
+          } else if (id === TILE_ID.GRASS && hash % 71 === 0) {
+            const sway = Math.sin(this.time * 3 + hash) * 1.5;
+            ctx.fillStyle = '#e6d68a';
+            ctx.fillRect(x + 15 + sway, y + 19, 2, 2);
+            ctx.fillStyle = '#fff0b2';
+            ctx.fillRect(x + 16 + sway, y + 18, 1, 1);
+          } else if (id === TILE_ID.CACTUS) {
+            ctx.globalAlpha = 0.35 + (Math.sin(this.time * 2 + hash) + 1) * 0.12;
+            ctx.fillStyle = '#b4f29d';
+            ctx.fillRect(x + 14 + Math.sin(this.time + hash) * 2, y + 7 + hash % 7, 2, 2);
+            ctx.globalAlpha = 1;
+          } else if (id === TILE_ID.HOUSE_WALL) {
+            const glow = 0.12 + (Math.sin(this.time * 1.8 + hash) + 1) * 0.08;
+            ctx.globalAlpha = glow;
+            ctx.fillStyle = '#ffe79a';
+            ctx.fillRect(x + 6, y + 13, 6, 7);
+            ctx.fillRect(x + 22, y + 13, 6, 7);
+            ctx.globalAlpha = 1;
+          }
+        }
+      }
       ctx.restore();
     }
 
@@ -5450,6 +5761,7 @@
       if (found.kind === 'chest') label = '[F] Open Boss Chest';
       else if (found.kind === 'portal') label = `[F] Enter ${found.obj.label}`;
       else if (found.obj.type === 'shop') label = '[F] Open Shop';
+      else if (found.obj.type === 'guard') label = '[F] Talk to Village Guard';
       else label = this.quest.complete ? '[F] Turn in Quest' : '[F] Talk / Quest';
       const ctx = this.ctx;
       ctx.font = 'bold 12px monospace';
@@ -5539,7 +5851,7 @@
 
       this.button(x + 34, y + 202, 130, 34, 'LOGIN', 'login', { color: '#3f7d55', border: '#8ee6a8' });
       this.button(x + 176, y + 202, 130, 34, 'REGISTER', 'register', { color: '#2f5f8c', border: '#8ee6ff' });
-      this.button(x + 34, y + 242, 272, 20, 'BACK TO OFFLINE TITLE', 'loginBack', { color: '#34405c' });
+      this.button(x + 34, y + 242, 272, 20, 'BACK TO HERO SELECT', 'loginBack', { color: '#34405c' });
 
       ctx.fillStyle = this.network.connected ? '#8ee6a8' : this.network.connecting ? '#ffd75e' : '#ff9b9b';
       ctx.font = '11px monospace';
@@ -5549,6 +5861,119 @@
       ctx.fillStyle = '#7f8ca5';
       ctx.font = '10px monospace';
       ctx.fillText('Offline mode still works: press Esc or BACK, then START.', VIEW_W / 2, 476);
+    }
+
+    drawIntroScreen() {
+      const ctx = this.ctx;
+      const sky = ctx.createLinearGradient(0, 0, 0, VIEW_H);
+      sky.addColorStop(0, '#0b1429');
+      sky.addColorStop(0.62, '#263455');
+      sky.addColorStop(1, '#6a4c58');
+      ctx.fillStyle = sky;
+      ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+
+      // Star field, moon and layered mountain silhouettes establish the world
+      // before the player chooses a class.
+      for (let i = 0; i < 72; i++) {
+        const sx = (i * 137 + 29) % VIEW_W;
+        const sy = (i * 79 + 11) % 235;
+        ctx.globalAlpha = 0.45 + (Math.sin(this.time * 1.4 + i) + 1) * 0.22;
+        ctx.fillStyle = i % 5 === 0 ? '#ffe6a3' : '#d9e7ff';
+        ctx.fillRect(sx, sy, i % 7 === 0 ? 3 : 2, i % 7 === 0 ? 3 : 2);
+      }
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = '#f8e4ae';
+      ctx.beginPath(); ctx.arc(810, 88, 28, 0, TAU); ctx.fill();
+      ctx.fillStyle = 'rgba(11,20,41,0.5)';
+      ctx.beginPath(); ctx.arc(821, 80, 27, 0, TAU); ctx.fill();
+
+      const mountain = (color, points) => {
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.moveTo(points[0][0], VIEW_H);
+        for (const [px, py] of points) ctx.lineTo(px, py);
+        ctx.lineTo(VIEW_W, VIEW_H);
+        ctx.closePath();
+        ctx.fill();
+      };
+      mountain('#222b46', [[0, 318], [115, 248], [208, 292], [340, 218], [460, 294], [582, 232], [704, 291], [836, 224], [960, 296]]);
+      mountain('#171e34', [[0, 360], [132, 302], [260, 339], [395, 284], [530, 348], [692, 294], [820, 345], [960, 278]]);
+
+      // Hearthvale rooftops and warm windows sit below the story card.
+      ctx.fillStyle = '#111a2b';
+      ctx.fillRect(0, 365, VIEW_W, 175);
+      for (let i = 0; i < 9; i++) {
+        const hx = 16 + i * 112;
+        const hw = 62 + (i % 3) * 10;
+        const hh = 46 + (i % 2) * 15;
+        ctx.fillStyle = i % 2 ? '#263047' : '#302d43';
+        ctx.fillRect(hx, 414 - hh, hw, hh);
+        ctx.fillStyle = '#573d48';
+        ctx.beginPath();
+        ctx.moveTo(hx - 8, 414 - hh);
+        ctx.lineTo(hx + hw / 2, 382 - hh);
+        ctx.lineTo(hx + hw + 8, 414 - hh);
+        ctx.closePath(); ctx.fill();
+        ctx.fillStyle = i % 3 === 0 ? '#ffd078' : '#8fc4d7';
+        ctx.globalAlpha = 0.58 + Math.sin(this.time * 2 + i) * 0.12;
+        ctx.fillRect(hx + 13, 426 - hh, 8, 11);
+        ctx.fillRect(hx + hw - 22, 426 - hh, 8, 11);
+        ctx.globalAlpha = 1;
+      }
+
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#ffd75e';
+      ctx.font = 'bold 38px monospace';
+      ctx.shadowColor = 'rgba(0,0,0,0.65)';
+      ctx.shadowBlur = 10;
+      ctx.fillText('PIXEL REALM', VIEW_W / 2, 61);
+      ctx.shadowBlur = 0;
+      ctx.font = 'bold 13px monospace';
+      ctx.fillStyle = '#a9d8ff';
+      ctx.fillText('CHRONICLES OF THE BROKEN SEAL', VIEW_W / 2, 83);
+
+      const x = 126;
+      const y = 105;
+      const w = 708;
+      const h = 278;
+      ctx.fillStyle = 'rgba(8,13,25,0.91)';
+      ctx.fillRect(x, y, w, h);
+      ctx.strokeStyle = '#c6a86a';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
+      ctx.strokeStyle = 'rgba(255,215,94,0.25)';
+      ctx.strokeRect(x + 8, y + 8, w - 16, h - 16);
+
+      ctx.font = 'bold 17px monospace';
+      ctx.fillStyle = '#ffe3a1';
+      ctx.fillText('THE NIGHT THE SEAL BROKE', VIEW_W / 2, y + 39);
+      ctx.textAlign = 'left';
+      ctx.font = '12px monospace';
+      ctx.fillStyle = '#d8e1f2';
+      wrappedText(ctx,
+        'For generations, Hearthvale’s wardens kept an ancient seal beneath Mount Veyr asleep. Last night it cracked. The forest stirred, monsters flooded the old roads, and a cold light appeared in the mountain cave.',
+        x + 34, y + 78, w - 68, 18, 4);
+      ctx.fillStyle = '#b9c7e6';
+      wrappedText(ctx,
+        'Elder Tarn is gathering heroes to restore the village wardstones and follow the trail to its source. Stand on the front line as a Swordsman, strike from afar as an Archer, or master the Mage’s ancient flame. The fate of Hearthvale begins with you.',
+        x + 34, y + 166, w - 68, 18, 4);
+      ctx.textAlign = 'center';
+      ctx.font = 'italic 11px monospace';
+      ctx.fillStyle = '#ffd75e';
+      ctx.fillText('Your legend begins on the road to Hearthvale.', VIEW_W / 2, y + 250);
+
+      if (this.saveData) {
+        this.button(286, 414, 184, 38, 'BEGIN JOURNEY', 'beginStory', { color: '#3f7d55', border: '#8ee6a8', fontSize: 12 });
+        this.button(490, 414, 184, 38, `CONTINUE Lv${this.saveData.level || 1}`, 'continueFromIntro', { color: '#5b4b8c', border: '#c9a6ff', fontSize: 11 });
+        ctx.font = '10px monospace';
+        ctx.fillStyle = '#9fb0cd';
+        ctx.fillText('Enter: begin journey    C: continue saved hero', VIEW_W / 2, 476);
+      } else {
+        this.button(380, 414, 200, 38, 'BEGIN JOURNEY', 'beginStory', { color: '#3f7d55', border: '#8ee6a8', fontSize: 12 });
+        ctx.font = '10px monospace';
+        ctx.fillStyle = '#9fb0cd';
+        ctx.fillText('Press Enter or tap Begin Journey to choose your hero.', VIEW_W / 2, 476);
+      }
     }
 
     drawSelectScreen() {
@@ -5573,7 +5998,9 @@
       ctx.fillText('PIXEL REALM', VIEW_W / 2, 58);
       ctx.font = '14px monospace';
       ctx.fillStyle = '#b9c7e6';
-      ctx.fillText('A tiny browser MMORPG - choose your hero', VIEW_W / 2, 80);
+      ctx.fillText('Choose your path through the Broken Seal story', VIEW_W / 2, 80);
+
+      this.button(20, 18, 150, 26, 'BACK TO STORY', 'backToIntro', { color: '#34405c', border: '#9fb0cd', fontSize: 9 });
 
       const ids = ['swordsman', 'archer', 'mage'];
       const frame = Math.floor(this.time * 3) % 4;
@@ -5668,7 +6095,7 @@
         ctx.fillRect(cx, cy, size, size);
         const color = item ? RARITY[item.rarity].color : '#3b455d';
         ctx.strokeStyle = color;
-        const selected = item && source.type === 'inv' && item.uid === this.selectedItemUid;
+        const selected = item && item.uid === this.selectedItemUid;
         ctx.strokeStyle = selected ? '#ffd75e' : color;
         ctx.lineWidth = selected ? 3 : item ? 2 : 1;
         ctx.strokeRect(cx + 0.5, cy + 0.5, size - 1, size - 1);
@@ -5678,6 +6105,14 @@
           ctx.fillRect(cx + 6, cy + 6, size - 12, size - 12);
           ctx.globalAlpha = 1;
           drawItemImage(ctx, item, cx + 6, cy + 6, size - 12);
+          if (item.slot === 'consumable' && (item.quantity || 1) > 1) {
+            ctx.fillStyle = 'rgba(5,8,15,0.9)';
+            ctx.fillRect(cx + size - 27, cy + size - 18, 23, 14);
+            ctx.fillStyle = '#fff';
+            ctx.font = 'bold 9px monospace';
+            ctx.textAlign = 'right';
+            ctx.fillText(`x${item.quantity}`, cx + size - 6, cy + size - 8);
+          }
         }
         this.dropRegions.push({ x: cx, y: cy, w: size, h: size, item, source });
       };
@@ -5725,20 +6160,23 @@
         ctx.fillStyle = RARITY[r].color;
         ctx.fillText(RARITY[r].label, ix, y + 80 + i * 18);
       });
-      const selectedItem = p.inventory.find(item => item.uid === this.selectedItemUid);
+      const selectedInBag = p.inventory.find(item => item.uid === this.selectedItemUid) || null;
+      const selectedItem = selectedInBag || Object.values(p.equipment).find(item => item && item.uid === this.selectedItemUid) || null;
       if (selectedItem) {
         ctx.font = 'bold 10px monospace';
         ctx.fillStyle = RARITY[selectedItem.rarity].color;
         wrappedText(ctx, selectedItem.name, ix, y + 150, 174, 13, 2);
         ctx.font = '10px monospace';
         ctx.fillStyle = '#9fb0cd';
-        const requirement = selectedItem.classId ? `${CLASS_DATA[selectedItem.classId]?.name || selectedItem.classId} only` : 'Any role';
-        ctx.fillText(`${selectedItem.slot.toUpperCase()} · ${requirement}`, ix, y + 180);
+        const requiredClass = selectedItem.slot === 'weapon' ? (weaponClassFor(selectedItem) || selectedItem.classId) : selectedItem.classId;
+        const requirement = requiredClass ? `${CLASS_DATA[requiredClass]?.name || requiredClass} only` : 'Any role';
+        ctx.fillText(`${selectedItem.slot.toUpperCase()} | ${requirement}`, ix, y + 180);
         ctx.fillStyle = '#dbe6ff';
-        wrappedText(ctx, itemStatsText(selectedItem), ix, y + 199, 174, 13, 5);
+        if (selectedItem.slot === 'consumable') ctx.fillText(`Quantity: ${selectedItem.quantity || 1}`, ix, y + 193);
+        wrappedText(ctx, itemStatsText(selectedItem), ix, y + (selectedItem.slot === 'consumable' ? 210 : 199), 174, 13, 4);
         if (selectedItem.desc) {
           ctx.fillStyle = '#8290aa';
-          wrappedText(ctx, selectedItem.desc, ix, y + 263, 174, 12, 1);
+          wrappedText(ctx, selectedItem.desc, ix, y + 254, 174, 12, 3);
         }
       } else {
         ctx.font = '10px monospace';
@@ -5747,17 +6185,31 @@
       }
 
       const isGear = selectedItem && (selectedItem.slot === 'weapon' || selectedItem.slot === 'armor');
-      const canEquipSelected = isGear && itemCanEquip(selectedItem, p.classId);
+      const canEquipSelected = !!selectedInBag && isGear && itemCanEquip(selectedItem, p.classId);
       const equipLabel = canEquipSelected ? `EQUIP ${selectedItem.slot.toUpperCase()}`
         : isGear ? `${CLASS_DATA[selectedItem.classId]?.name || 'OTHER'} ONLY` : 'SELECT GEAR TO EQUIP';
-      this.button(x + 452, y + 278, 160, 30, equipLabel, 'equipSelectedItem', {
+      this.button(x + 452, y + 310, 160, 28, equipLabel, 'equipSelectedItem', {
         color: canEquipSelected ? '#3f7d55' : '#34405c',
         border: canEquipSelected ? '#8ee6a8' : '#59647a',
         fontSize: 10
       });
-      this.button(x + 452, y + 314, 160, 30, 'SKILLS (K)', 'openSkills', { color: '#4a3f7a' });
-      this.button(x + 452, y + 350, 160, 30, 'USE POTION (Q)', 'potion', { color: '#6b3542' });
-      this.button(x + 452, y + 386, 160, 30, 'CLOSE', 'closePanel', { color: '#34405c' });
+      const canManageSelected = !!selectedInBag;
+      const sellValue = canManageSelected ? itemSellValue(selectedInBag) : 0;
+      this.button(x + 452, y + 340, 78, 24, canManageSelected ? `SELL +${sellValue}` : 'SELL', 'sellSelectedItem', {
+        color: canManageSelected ? '#75612b' : '#34405c',
+        border: canManageSelected ? '#ffd75e' : '#59647a',
+        fontSize: 9
+      });
+      this.button(x + 534, y + 340, 78, 24, canManageSelected ? `DISCARD x${selectedInBag.quantity || 1}` : 'DISCARD', 'discardSelectedItem', {
+        color: canManageSelected ? '#713b43' : '#34405c',
+        border: canManageSelected ? '#ff9b9b' : '#59647a',
+        fontSize: 9
+      });
+      this.button(x + 452, y + 370, 160, 24, 'SKILLS (K)', 'openSkills', { color: '#4a3f7a' });
+      const selectedConsumable = selectedItem && selectedItem.slot === 'consumable';
+      this.button(x + 452, y + 400, 160, 24,
+        selectedConsumable && selectedItem.teleportTo ? 'USE SCROLL (Q)' : 'USE POTION (Q)', 'potion', { color: '#6b3542' });
+      this.button(x + 452, y + 422, 160, 24, 'CLOSE', 'closePanel', { color: '#34405c' });
     }
 
     drawSkillsPanel() {
@@ -5820,7 +6272,7 @@
         ctx.fillText(item.name, bx + 40, by + 22);
         ctx.font = '10px monospace';
         ctx.fillStyle = '#c8d3ea';
-        const roleText = item.classId ? `${CLASS_DATA[item.classId]?.name || item.classId} only · ` : '';
+        const roleText = item.classId ? `${CLASS_DATA[item.classId]?.name || item.classId} only | ` : '';
         wrappedText(ctx, roleText + itemStatsText(item), bx + 40, by + 38, 222, 13, 2);
         ctx.fillStyle = '#ffd75e';
         ctx.fillText(`${item.price}g`, bx + 10, by + 84);
@@ -5843,8 +6295,8 @@
       ctx.textAlign = 'left';
       ctx.fillStyle = '#dbe6ff';
       const description = stage === 2
-        ? 'Elder Tarn needs the cave cleared. Defeat 8 goblins and bring back 4 ore. Ore drops from goblins.'
-        : 'Elder Tarn needs the forest cleared. Defeat 10 slimes and bring back 5 herbs. Herbs drop from monsters.';
+        ? 'The wardstones are failing as the seal beneath Mount Veyr weakens. Clear 8 goblins and bring 4 ore from the cave.'
+        : 'The broken seal has stirred the forest creatures. Help Elder Tarn restore the village wards: defeat 10 slimes and bring 5 herbs.';
       wrappedText(ctx, description, x + 24, y + 54, w - 48, 18, 4);
       const firstProgress = stage === 2 ? (this.quest.goblins || 0) / 8 : this.quest.kills / 10;
       const secondProgress = stage === 2 ? (this.quest.ore || 0) / 4 : this.quest.herbs / 5;
@@ -5853,19 +6305,29 @@
       ctx.textAlign = 'left';
       ctx.font = '11px monospace';
       ctx.fillStyle = '#9fb0cd';
+      const reward = stage === 1 ? 'Reward: 100 gold + 180 XP; unlocks Cave Patrol.'
+        : 'Reward: 140 gold + 260 XP + an epic armor piece.';
+      ctx.fillStyle = '#ffd75e';
+      ctx.font = 'bold 10px monospace';
+      wrappedText(ctx, reward, x + 24, y + 190, w - 48, 14, 2);
+      ctx.fillStyle = '#9fb0cd';
+      ctx.font = '11px monospace';
       const status = this.quest.claimed ? 'Reward already claimed.'
         : this.quest.complete ? stage === 1
-          ? 'Ready to turn in! Reward: 100 gold and 180 XP. This unlocks the Cave Patrol.'
-          : 'Ready to turn in! Reward: 140 gold, 260 XP, and an epic armor piece.'
+          ? 'Objectives complete! Turn in to claim your reward.'
+          : 'Objectives complete! Turn in to claim your reward.'
           : this.quest.active ? 'Quest in progress. Keep hunting!' : stage === 2
-            ? 'Second request in Elder Tarn’s quest chain.'
-            : 'First request in Elder Tarn’s quest chain.';
-      wrappedText(ctx, status, x + 24, y + 196, w - 48, 16, 3);
+            ? 'Second request in Elder Tarn quest chain.'
+            : 'First request in Elder Tarn quest chain.';
+      wrappedText(ctx, status, x + 24, y + 218, w - 48, 14, 3);
       if (this.quest.claimed) {
         this.button(x + 162, y + 294, 140, 32, 'CLOSE', 'closePanel', { color: '#34405c' });
       } else if (this.quest.complete) {
         this.button(x + 72, y + 294, 150, 32, 'TURN IN', 'questTurnIn', { color: '#3f7d55' });
         this.button(x + 242, y + 294, 150, 32, 'LATER', 'closePanel', { color: '#34405c' });
+      } else if (this.quest.active) {
+        this.button(x + 72, y + 294, 150, 32, 'IN PROGRESS', 'closePanel', { color: '#34405c' });
+        this.button(x + 242, y + 294, 150, 32, 'CLOSE', 'closePanel', { color: '#34405c' });
       } else {
         this.button(x + 72, y + 294, 150, 32, 'ACCEPT QUEST', 'questAccept', { color: '#5b4b8c' });
         this.button(x + 242, y + 294, 150, 32, 'LATER', 'closePanel', { color: '#34405c' });
@@ -6119,8 +6581,10 @@
         ctx.fillText(r.cost, rx + 12, ry + 46);
         ctx.fillStyle = '#9fb0cd';
         wrappedText(ctx, r.desc, rx + 12, ry + 66, 182, 13, 3);
-        this.button(rx + 12, ry + 96, 182, 24, 'CRAFT', 'craft:' + r.id,
-          { color: this.network.online ? '#3f7d55' : '#4a3340' });
+        const canCraft = this.network.online && (r.id !== 'sword' || p.classId === 'swordsman');
+        this.button(rx + 12, ry + 96, 182, 24,
+          r.id === 'sword' && p.classId !== 'swordsman' ? 'SWORDSMAN ONLY' : 'CRAFT', 'craft:' + r.id,
+          { color: canCraft ? '#3f7d55' : '#4a3340', fontSize: 9 });
       });
 
       ctx.fillStyle = '#dbe6ff';
