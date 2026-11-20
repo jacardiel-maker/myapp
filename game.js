@@ -109,41 +109,50 @@
   // Each role has four skills, bound to keys 1 through 4.
   const SKILLS = {
     swordsman: [
-      { name: 'Dash Strike', cost: 15, cd: 5, desc: 'Dash forward and slash everything you pass.' },
+      { name: 'Dash Strike', cost: 15, cd: 5, range: 95, aoe: 70, desc: 'Dash forward and slash everything you pass.' },
       { name: 'Shield Block', cost: 10, cd: 8, desc: 'Block 80% of damage for 3 seconds.' },
       { name: 'Whirlwind', cost: 25, cd: 9, desc: 'Spin and hit every nearby enemy.' },
       { name: 'Seismic Slam', cost: 32, cd: 12, desc: 'Smash the ground, damaging and slowing nearby enemies.' }
     ],
     archer: [
-      { name: 'Multi-Shot', cost: 18, cd: 5, desc: 'Fire three arrows in a spread.' },
-      { name: 'Roll Dodge', cost: 12, cd: 6, desc: 'Roll quickly and become untouchable.' },
-      { name: 'Poison Arrow', cost: 20, cd: 8, desc: 'An arrow that poisons its target.' },
-      { name: 'Arrow Rain', cost: 30, cd: 10, desc: 'Rain arrows over the selected area.' }
+      { name: 'Multi-Shot', cost: 18, cd: 5, range: 260, desc: 'Fire three arrows in a spread.' },
+      { name: 'Roll Dodge', cost: 12, cd: 6, range: 120, desc: 'Roll quickly and become untouchable.' },
+      { name: 'Poison Arrow', cost: 20, cd: 8, range: 280, desc: 'An arrow that poisons its target.' },
+      { name: 'Arrow Rain', cost: 30, cd: 10, range: 320, aoe: 112, desc: 'Rain arrows over the selected area.' }
     ],
     mage: [
       { name: 'Ice Nova', cost: 25, cd: 8, desc: 'Damage and slow all nearby enemies.' },
-      { name: 'Blink', cost: 18, cd: 6, desc: 'Teleport toward your cursor.' },
-      { name: 'Meteor', cost: 40, cd: 12, desc: 'Call down a huge fire blast at your cursor.' },
-      { name: 'Arcane Burst', cost: 32, cd: 9, desc: 'Detonate arcane energy in a targeted area.' }
+      { name: 'Blink', cost: 18, cd: 6, range: 170, desc: 'Teleport toward your cursor.' },
+      { name: 'Meteor', cost: 40, cd: 12, range: 260, aoe: 108, desc: 'Call down a huge fire blast at your cursor.' },
+      { name: 'Arcane Burst', cost: 32, cd: 9, range: 220, aoe: 105, desc: 'Detonate arcane energy in a targeted area.' }
     ],
     cleric: [
-      { name: 'Holy Smite', cost: 18, cd: 5, desc: 'Call down a pillar of holy light to strike the enemy.' },
+      { name: 'Holy Smite', cost: 18, cd: 5, range: 180, aoe: 65, desc: 'Call down a pillar of holy light to strike the enemy.' },
       { name: 'Divine Heal', cost: 28, cd: 7, desc: 'Heal yourself and all nearby party members.' },
       { name: 'Aegis Ward', cost: 22, cd: 10, desc: 'Grant a barrier absorbing damage and granting defense.' },
       { name: 'Radiant Nova', cost: 38, cd: 11, desc: 'Release an explosion of holy light that harms foes and heals allies.' }
     ],
     rogue: [
-      { name: 'Shadow Strike', cost: 16, cd: 4, desc: 'Lunge behind the target with a brutal stab.' },
+      { name: 'Shadow Strike', cost: 16, cd: 4, range: 110, aoe: 60, desc: 'Lunge behind the target with a brutal stab.' },
       { name: 'Smoke Bomb', cost: 20, cd: 9, desc: 'Drop smoke, becoming invisible and gaining +30% movement speed.' },
-      { name: 'Poison Dart', cost: 18, cd: 6, desc: 'Throw a toxic dart that continuously drains enemy life.' },
-      { name: 'Eviscerate', cost: 35, cd: 10, desc: 'Vicious execution dealing catastrophic damage to wounded foes.' }
+      { name: 'Poison Dart', cost: 18, cd: 6, range: 220, desc: 'Throw a toxic dart that continuously drains enemy life.' },
+      { name: 'Eviscerate', cost: 35, cd: 10, range: 70, aoe: 75, desc: 'Vicious execution dealing catastrophic damage to wounded foes.' }
     ],
     summoner: [
-      { name: 'Arcane Blast', cost: 15, cd: 4, desc: 'Hurl a bolt of condensed spiritual force.' },
+      { name: 'Arcane Blast', cost: 15, cd: 4, range: 200, desc: 'Hurl a bolt of condensed spiritual force.' },
       { name: 'Summon Familiar', cost: 30, cd: 15, desc: 'Summon an ethereal familiar that fights alongside you.' },
       { name: 'Spirit Ward', cost: 24, cd: 9, desc: 'Distribute 30% of incoming damage to your spirit energy.' },
       { name: 'Soul Nova', cost: 42, cd: 12, desc: 'Sacrifice spirit power to erupt in a shockwave of necrotic force.' }
     ]
+  };
+
+  const SKILL_COLORS = {
+    swordsman: ['#dceeff', '#8fd0ff', '#eaf4ff', '#d2c2a0'],
+    archer: ['#b9ffcb', '#b9ffcb', '#8ee46d', '#a8e8ff'],
+    mage: ['#9ce7ff', '#d7b8ff', '#ff9c42', '#e7b8ff'],
+    cleric: ['#ffd75e', '#a8f0cd', '#8ee6ff', '#fff3a8'],
+    rogue: ['#52ffb8', '#8a9ba8', '#a8ff78', '#ff4d6d'],
+    summoner: ['#d7b8ff', '#bf7fff', '#70d6ff', '#e08bff']
   };
 
   function drawSkillIcon(ctx, classId, index, x, y, size, active = false, time = 0) {
@@ -2442,6 +2451,8 @@
       this.walkTimer = 0;
       this.shieldTime = 0;
       this.invuln = 0;
+      this.hasteTime = 0;
+      this.familiarTime = 0;
       this.dashTime = 0;
       this.emote = null;
       this.critChance = 0.10;
@@ -2512,6 +2523,8 @@
       this.skillAnim = Math.max(0, this.skillAnim - dt);
       this.shieldTime = Math.max(0, this.shieldTime - dt);
       this.invuln = Math.max(0, this.invuln - dt);
+      this.hasteTime = Math.max(0, this.hasteTime - dt);
+      this.familiarTime = Math.max(0, this.familiarTime - dt);
       for (let i = 0; i < 4; i++) this.skillCd[i] = Math.max(0, this.skillCd[i] - dt);
       if (this.emote) {
         this.emote.time -= dt;
@@ -2542,7 +2555,7 @@
           movingInput = true;
           dx /= len;
           dy /= len;
-          const speed = this.finalStats.speed * (this.shieldTime > 0 ? 0.55 : 1);
+          const speed = this.finalStats.speed * (this.shieldTime > 0 ? 0.55 : 1) * (this.hasteTime > 0 ? 1.3 : 1);
           game.tryMove(this, dx * speed * dt, dy * speed * dt);
           this.facing = Math.atan2(dy, dx);
           this.walkTimer += dt;
@@ -2619,6 +2632,18 @@
           vy: Math.sin(this.aim) * 350,
           damage, owner: this, crit, kind: 'fireball', aoe: 54, radius: 8, life: 2.4
         });
+      }
+    }
+
+    // Cleric heals work on the local hero and nearby party members, offline too.
+    healParty(game, amount, radius = 180) {
+      this.hp = clamp(this.hp + amount, 1, this.maxHp);
+      game.addFloater(this.x, this.y - 42, `+${amount}`, '#a8f0cd', 14);
+      for (const ally of game.party || []) {
+        if (!ally || ally === this || ally.alive === false) continue;
+        if (dist(this, ally) > radius) continue;
+        ally.hp = clamp((Number(ally.hp) || 0) + amount, 1, Number(ally.maxHp) || amount);
+        game.addFloater(ally.x, ally.y - 42, `+${amount}`, '#a8f0cd', 13);
       }
     }
 
@@ -2746,9 +2771,7 @@
           game.areaDamage(target.x, target.y, 65, baseDamage * 1.7, this, 'holy');
           game.shake = Math.max(game.shake, 4);
         } else if (index === 1) { // Divine Heal
-          const healAmt = Math.round(65 * power);
-          this.hp = clamp(this.hp + healAmt, 1, this.maxHp);
-          game.addFloater(this.x, this.y - 42, `+${healAmt}`, '#a8f0cd', 14);
+          this.healParty(game, Math.round(65 * power), 180);
           game.effects.push(new Effect('ring', this.x, this.y - 8, { color: '#a8f0cd', radius: 10, endRadius: 50, life: 0.4 }));
         } else if (index === 2) { // Aegis Ward
           this.shieldTime = 4;
@@ -2756,24 +2779,24 @@
           game.addFloater(this.x, this.y - 42, 'Aegis Ward!', '#8ee6ff', 12);
         } else { // Radiant Nova
           game.areaDamage(this.x, this.y, 125, baseDamage * 2.2, this, 'holy');
-          const healAmt = Math.round(35 * power);
-          this.hp = clamp(this.hp + healAmt, 1, this.maxHp);
-          game.addFloater(this.x, this.y - 42, `+${healAmt}`, '#ffd75e', 14);
+          this.healParty(game, Math.round(35 * power), 125);
           game.effects.push(new Effect('ring', this.x, this.y - 8, { color: '#fff3a8', radius: 15, endRadius: 125, life: 0.5 }));
           game.shake = Math.max(game.shake, 5);
         }
       } else if (this.classId === 'rogue') {
         if (index === 0) { // Shadow Strike
-          const target = game.currentLockTarget();
-          let tx = target ? target.x - Math.cos(target.facing || 0) * 28 : this.x + Math.cos(aim) * 90;
-          let ty = target ? target.y - Math.sin(target.facing || 0) * 28 : this.y + Math.sin(aim) * 90;
+          // A cursor-confirmed skill always uses the clicked point, never a lock.
+          const point = game.clampSkillPoint(index, game.getAimPoint());
+          let tx = point.x;
+          let ty = point.y;
           game.effects.push(new Effect('line', this.x, this.y - 8, { color: '#52ffb8', x2: tx, y2: ty - 8, life: 0.22, size: 4 }));
           this.x = tx; this.y = ty;
           game.effects.push(new Effect('slash', tx, ty - 10, { element: 'steel', angle: aim, radius: 34, life: 0.24 }));
-          game.areaDamage(tx, ty, 60, baseDamage * 1.8 * 1.5, this, 'slash');
+          game.areaDamage(tx, ty, 60, baseDamage * 2.7, this, 'slash');
           game.shake = Math.max(game.shake, 4);
         } else if (index === 1) { // Smoke Bomb
           this.invuln = 2.5;
+          this.hasteTime = 2.5;
           game.effects.push(new Effect('ring', this.x, this.y - 8, { color: '#8a9ba8', radius: 10, endRadius: 80, life: 0.6 }));
           game.areaDamage(this.x, this.y, 80, baseDamage * 0.5, this, 'smoke', { slow: 0.5 });
           game.addFloater(this.x, this.y - 42, 'Vanish!', '#52ffb8', 12);
@@ -2784,8 +2807,9 @@
             damage: baseDamage * 1.0, owner: this, kind: 'poison', poison: 10 * power, radius: 5, life: 2.0
           });
         } else { // Eviscerate
-          const tx = this.x + Math.cos(aim) * 35;
-          const ty = this.y + Math.sin(aim) * 35;
+          const point = game.clampSkillPoint(index, game.getAimPoint());
+          const tx = point.x;
+          const ty = point.y;
           game.effects.push(new Effect('slash', tx, ty - 8, { element: 'steel', angle: aim, radius: 44, life: 0.32 }));
           game.areaDamage(tx, ty, 75, baseDamage * 3.0, this, 'slash');
           game.shake = Math.max(game.shake, 7);
@@ -2798,7 +2822,9 @@
             damage: baseDamage * 1.3, owner: this, kind: 'arcane', aoe: 40, radius: 7, life: 2.2
           });
         } else if (index === 1) { // Summon Familiar
-          game.areaDamage(this.x, this.y, 90, baseDamage * 1.5, this, 'summon');
+          game.areaDamage(this.x, this.y, 90, baseDamage * 0.6, this, 'summon');
+          game.familiar = new Familiar(this.x + 26, this.y - 20);
+          this.familiarTime = game.familiar.life;
           game.effects.push(new Effect('ring', this.x, this.y - 8, { color: '#bf7fff', radius: 12, endRadius: 90, life: 0.5 }));
           game.addFloater(this.x, this.y - 42, 'Familiar Risen!', '#e08bff', 13);
         } else if (index === 2) { // Spirit Ward
@@ -3481,6 +3507,79 @@
     }
   }
 
+  function drawFamiliarOrb(ctx, x, y, time, color = '#bf7fff') {
+    ctx.save();
+    const pulse = 1 + Math.sin(time * 6) * 0.12;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 16;
+    ctx.globalAlpha = 0.9;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(x, y, 7 * pulse, 0, TAU);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 0.55;
+    ctx.strokeStyle = '#f0d6ff';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(x, y, 13 * pulse, time * 2, time * 2 + Math.PI * 1.4);
+    ctx.stroke();
+    ctx.fillStyle = '#ffffff';
+    ctx.globalAlpha = 0.95;
+    ctx.beginPath();
+    ctx.arc(x - 2, y - 2, 2, 0, TAU);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // Summoner companion: follows the caster and fires small arcane bolts.
+  class Familiar {
+    constructor(x, y, visualOnly = false) {
+      this.x = x;
+      this.y = y;
+      this.radius = 8;
+      this.life = 12;
+      this.fireCd = 0.7;
+      this.visualOnly = visualOnly;
+      this.color = '#bf7fff';
+    }
+    update(dt, game) {
+      this.life -= dt;
+      this.fireCd -= dt;
+      const caster = game.player;
+      if (!caster) return;
+      const d = dist(this, caster);
+      if (d > 320) {
+        this.x = caster.x + 26;
+        this.y = caster.y - 20;
+      } else if (d > 30) {
+        const a = angleTo(this, caster);
+        const speed = clamp(d * 2.6, 90, 280);
+        game.tryMove(this, Math.cos(a) * speed * dt, Math.sin(a) * speed * dt);
+      }
+      if (this.visualOnly || this.fireCd > 0) return;
+      let target = null;
+      let nearest = 300;
+      for (const enemy of game.targetableEnemies()) {
+        const ed = dist(this, enemy);
+        if (ed < nearest) { target = enemy; nearest = ed; }
+      }
+      if (!target) return;
+      const a = angleTo(this, target);
+      game.spawnProjectile({
+        x: this.x, y: this.y,
+        vx: Math.cos(a) * 430, vy: Math.sin(a) * 430,
+        damage: caster.finalStats.attack * 0.55,
+        owner: caster, kind: 'arcane', aoe: 24, radius: 6, life: 1.8
+      });
+      game.effects.push(new Effect('ring', this.x, this.y, { color: this.color, radius: 4, endRadius: 18, life: 0.2 }));
+      this.fireCd = 0.9;
+    }
+    draw(ctx, game) {
+      drawFamiliarOrb(ctx, this.x, this.y, game.time, this.color);
+    }
+  }
+
   // STAGE 4: a little companion that follows you and vacuums up loot.
   class Pet {
     constructor(x, y) {
@@ -3976,6 +4075,7 @@
       }), this.x, this.y, frame, running);
       drawNameTag(ctx, this.name, `Lv ${this.level} ${CLASS_DATA[this.classId].name}${this.party ? ' *' : ''}`, this.x, this.y - 58, this.party ? '#ffd75e' : '#b9d9ff');
       drawBar(ctx, this.x - 19, this.y - 53, 38, 3, this.hp / this.maxHp, '#6ee787');
+      if (this.familiarTime > 0) drawFamiliarOrb(ctx, this.x + 26, this.y - 20, game.time);
       if (this.emote) drawEmote(ctx, this.x, this.y - (this.skillAnim > 0 ? 108 : 96), this.emote.text);
     }
   }
@@ -4177,7 +4277,11 @@
       this.autoSaveTimer = 0;
       this.enemySpawnTimer = 0;
       this.lockedTargetId = null; // Mob lock-on target (works offline and online).
+      this.lockTargetAt = -Infinity;
       this.pendingSkillIndex = null;
+      this.familiar = null;
+      this._lastStateAt = 0;
+      this._stallCheckTimer = 0;
       this.mobileMenuOpen = false; // Touch-friendly feature drawer.
 
       this.zones = {
@@ -4543,7 +4647,9 @@
         case ' ':
           if (this.network.online) {
             this.acquireAutoLockTarget();
-            this.network.send({ type: 'attack', lockTargetId: this.lockedTargetId });
+            const aim = this.getAimAngle(this.player);
+            const point = this.getAimPoint();
+            this.network.send({ type: 'attack', aim, aimX: point.x, aimY: point.y, lockTargetId: this.lockedTargetId });
           }
           else this.player && this.player.attack(this);
           break;
@@ -4561,19 +4667,18 @@
         case 't': this.panel = 'talents'; break;
         case 'y': this.panel = 'achievements'; this.audio.sfx('ui'); break;
         case 'u': this.panel = 'daily'; this.audio.sfx('ui'); break;
-        case 'l': this.panel = 'leaderboardModal'; if (this.network.online) this.network.send({ type: 'get_leaderboard', category: 'level' }); this.audio.sfx('ui'); break;
-        case 'p': this.panel = 'pets'; this.audio.sfx('ui'); break;
+        case 'l': this.toggleLockTarget(); break;
+        case 'p':
+          if (e.altKey) this.disbandParty();
+          else if (e.shiftKey) this.leaveParty();
+          else { this.panel = 'pets'; this.audio.sfx('ui'); }
+          break;
+        case 'v': this.panel = 'leaderboardModal'; if (this.network.online) this.network.send({ type: 'get_leaderboard', category: 'level' }); this.audio.sfx('ui'); break;
         case 'h': this.startTutorial(); break;
         case 'f': this.interact(); break;
         case 'n': if (this.network.online) this.network.send({ type: 'dungeon' }); else this.log('Dungeons require online mode.', '#ffd75e'); break;
         case 'e': this.emote(); break;
-        case 'p':
-          if (e.altKey) this.disbandParty();
-          else if (e.shiftKey) this.leaveParty();
-          else this.inviteParty();
-          break;
         case 'tab': this.cycleLockTarget(e.shiftKey ? -1 : 1); break;
-        case 'l': this.toggleLockTarget(); break;
         case 'q':
           this.useConsumable();
           break;
@@ -4668,8 +4773,10 @@
         if (this.player) {
           this.acquireAutoLockTarget();
           this.player.aim = this.getAimAngle(this.player);
-          if (this.network.online) this.network.send({ type: 'attack', aim: this.player.aim, lockTargetId: this.lockedTargetId });
-          else this.player.attack(this);
+          if (this.network.online) {
+            const point = this.getAimPoint();
+            this.network.send({ type: 'attack', aim: this.player.aim, aimX: point.x, aimY: point.y, lockTargetId: this.lockedTargetId });
+          } else this.player.attack(this);
         }
       }
     }
@@ -4900,6 +5007,7 @@
       const current = this.currentLockTarget();
       if (current) return current;
       this.lockedTargetId = null;
+      this.lockTargetAt = -Infinity;
       if (!this.player) return null;
       let nearest = null;
       let nearestDistance = maxDistance;
@@ -4914,12 +5022,25 @@
       return nearest;
     }
 
-    // Lock-on overrides aiming for attacks and skills, but selection still uses
-    // the raw cursor/facing so cycling always starts from what the player points at.
+    // A lock chosen after the last pointer move takes priority. Moving the cursor
+    // always hands aiming back to the player, which fixes "aim ignores cursor".
+    lockAimActive() {
+      const target = this.currentLockTarget();
+      return !!target && this.lockTargetAt >= this.pointer.lastMove;
+    }
+
     getAimPoint() {
+      if (this.lockAimActive()) {
+        const target = this.currentLockTarget();
+        return { x: target.x, y: target.y - 8 };
+      }
+      if (this.pointer.inside) return this.rawAimPoint();
       const target = this.currentLockTarget();
       if (target) return { x: target.x, y: target.y - 8 };
-      return this.rawAimPoint();
+      const angle = this.player ? (this.player.aim || this.player.facing || 0) : 0;
+      const px = this.player ? this.player.x : this.camX + VIEW_W / 2;
+      const py = this.player ? this.player.y - 8 : this.camY + VIEW_H / 2;
+      return { x: px + Math.cos(angle) * 180, y: py + Math.sin(angle) * 180 };
     }
 
     skillNeedsAim(index) {
@@ -4951,39 +5072,64 @@
       this.audio.sfx('ui');
     }
 
-    skillAimPoint() {
-      const locked = this.currentLockTarget();
-      if (locked) return { x: locked.x, y: locked.y - 8 };
-      if (this.pendingAimFromPointer && this.pointer.inside) {
-        const point = this.rawAimPoint();
-        if (this.player.classId === 'mage' && this.pendingSkillIndex === 2) {
-          const dx = point.x - this.player.x;
-          const dy = point.y - (this.player.y - 8);
-          const length = Math.hypot(dx, dy);
-          if (length > 260) return { x: this.player.x + dx / length * 260, y: this.player.y - 8 + dy / length * 260 };
-        }
-        return point;
+    skillTargetRange(index) {
+      const def = this.player && SKILLS[this.player.classId] && SKILLS[this.player.classId][index];
+      return (def && def.range) || 180;
+    }
+
+    skillTargetRadius(index) {
+      const def = this.player && SKILLS[this.player.classId] && SKILLS[this.player.classId][index];
+      if (def && def.aoe) return def.aoe;
+      return this.player && this.player.classId === 'swordsman' && index === 0 ? 70 : 0;
+    }
+
+    // One clamp for preview, click confirmation and offline damage. The old code
+    // used a different distance in each place, which made the preview lie.
+    clampSkillPoint(index, point) {
+      const p = this.player;
+      if (!p) return { x: point.x, y: point.y };
+      const originY = p.y - 8;
+      const maxRange = this.skillTargetRange(index);
+      let dx = point.x - p.x;
+      let dy = point.y - originY;
+      const length = Math.hypot(dx, dy);
+      if (length > maxRange) {
+        dx = dx / length * maxRange;
+        dy = dy / length * maxRange;
       }
-      const angle = this.player ? (this.player.aim || this.player.facing || 0) : 0;
-      const distance = this.player && this.player.classId === 'mage' && this.pendingSkillIndex === 2 ? 260 : 180;
-      return { x: this.player.x + Math.cos(angle) * distance, y: this.player.y - 8 + Math.sin(angle) * distance };
+      const pixelW = this.zone ? this.zone.pixelW : VIEW_W;
+      const pixelH = this.zone ? this.zone.pixelH : VIEW_H;
+      return {
+        x: clamp(p.x + dx, 40, Math.max(40, pixelW - 40)),
+        y: clamp(originY + dy, 40, Math.max(40, pixelH - 40))
+      };
+    }
+
+    skillAimPoint() {
+      if (!this.player || this.pendingSkillIndex === null) return this.rawAimPoint();
+      const index = this.pendingSkillIndex;
+      if (this.pendingAimFromPointer && this.pointer.inside) {
+        return this.clampSkillPoint(index, this.rawAimPoint());
+      }
+      if (this.lockAimActive()) {
+        const target = this.currentLockTarget();
+        return this.clampSkillPoint(index, { x: target.x, y: target.y - 8 });
+      }
+      if (this.pointer.inside) return this.clampSkillPoint(index, this.rawAimPoint());
+      const angle = this.player.aim || this.player.facing || 0;
+      const distance = this.skillTargetRange(index);
+      return this.clampSkillPoint(index, {
+        x: this.player.x + Math.cos(angle) * distance,
+        y: this.player.y - 8 + Math.sin(angle) * distance
+      });
     }
 
     confirmSkillTarget(point) {
       if (!this.player || this.pendingSkillIndex === null) return;
       const index = this.pendingSkillIndex;
-      const worldPoint = { x: point.x + this.camX, y: point.y + this.camY };
-      if (this.player.classId === 'mage' && index === 2 && !this.currentLockTarget()) {
-        const dx = worldPoint.x - this.player.x;
-        const dy = worldPoint.y - (this.player.y - 8);
-        const length = Math.hypot(dx, dy);
-        if (length > 260) {
-          worldPoint.x = this.player.x + dx / length * 260;
-          worldPoint.y = this.player.y - 8 + dy / length * 260;
-        }
-      }
-      this.pointer.x = point.x;
-      this.pointer.y = point.y;
+      const worldPoint = this.clampSkillPoint(index, { x: point.x + this.camX, y: point.y + this.camY });
+      this.pointer.x = worldPoint.x - this.camX;
+      this.pointer.y = worldPoint.y - this.camY;
       this.pointer.inside = true;
       this.pointer.lastMove = this.time;
       this.pendingSkillIndex = null;
@@ -4991,21 +5137,24 @@
       const aim = Math.atan2(worldPoint.y - (this.player.y - 10), worldPoint.x - this.player.x);
       this.player.aim = aim;
       if (this.network.online) {
-        this.network.send({ type: 'skill', index, aim, aimX: worldPoint.x, aimY: worldPoint.y, lockTargetId: this.lockedTargetId });
+        // Explicit cursor point wins over any lock target on the server too.
+        this.network.send({ type: 'skill', index, aim, aimX: worldPoint.x, aimY: worldPoint.y, lockTargetId: null });
       } else {
         this.player.useSkill(index, this);
       }
     }
 
     getAimAngle(entity) {
-      const target = this.currentLockTarget();
-      if (target) {
+      if (this.lockAimActive()) {
+        const target = this.currentLockTarget();
         return Math.atan2((target.y - 8) - (entity.y - 10), target.x - entity.x);
       }
-      if (this.pointer.inside && this.pointer.lastMove > this.time - 8) {
+      if (this.pointer.inside) {
         const p = this.rawAimPoint();
         return Math.atan2(p.y - (entity.y - 10), p.x - entity.x);
       }
+      const target = this.currentLockTarget();
+      if (target) return Math.atan2((target.y - 8) - (entity.y - 10), target.x - entity.x);
       return entity.facing || 0;
     }
 
@@ -5037,6 +5186,7 @@
 
       if (!candidates.length) {
         this.lockedTargetId = null;
+        this.lockTargetAt = -Infinity;
         this.log('No target in range.', '#ff9b9b');
         return;
       }
@@ -5046,6 +5196,7 @@
         ? (dir > 0 ? 0 : candidates.length - 1)
         : (index + dir + candidates.length) % candidates.length;
       this.lockedTargetId = candidates[index].enemy.id;
+      this.lockTargetAt = this.time;
       this.audio.sfx('ui');
       this.log(`Target locked: ${this.enemyLabel(candidates[index].enemy)}`, '#ffd75e');
     }
@@ -5058,6 +5209,7 @@
     unlockTarget() {
       if (this.lockedTargetId === null || this.lockedTargetId === undefined) return;
       this.lockedTargetId = null;
+      this.lockTargetAt = -Infinity;
       this.audio.sfx('ui');
       this.log('Target released.', '#9aa6bd');
     }
@@ -5065,12 +5217,25 @@
     updateLockTarget() {
       if (this.lockedTargetId === null || this.lockedTargetId === undefined) return;
       const target = this.currentLockTarget();
-      if (!target || !this.player || dist(this.player, target) > 900) this.lockedTargetId = null;
+      if (!target || !this.player || dist(this.player, target) > 900) {
+        this.lockedTargetId = null;
+        this.lockTargetAt = -Infinity;
+      }
     }
 
     // ============================================================
     // EXPANSION 1-5: authoritative online mode helpers
     // ============================================================
+
+    updateFamiliar(dt, allowAttack) {
+      if (this.state !== 'playing' || !this.player) return;
+      const p = this.player;
+      if (!(p.familiarTime > 0)) { this.familiar = null; return; }
+      if (!this.familiar) this.familiar = new Familiar(p.x + 26, p.y - 20, !allowAttack);
+      this.familiar.visualOnly = !allowAttack;
+      this.familiar.life = Math.max(this.familiar.life, p.familiarTime);
+      this.familiar.update(dt, this);
+    }
 
     // Predict local movement at the same speed as offline play, then reconcile
     // larger differences against the authoritative server position.
@@ -5079,13 +5244,27 @@
       const p = this.player;
       if (!p || !net.online || !net.connected) return;
 
+      // The server sends state at 20 Hz. If it silently stops, switch to offline
+      // instead of leaving the player staring at a frozen online world.
+      this._stallCheckTimer += dt;
+      if (this._stallCheckTimer >= 1) {
+        this._stallCheckTimer = 0;
+        if (net.joined && this._lastStateAt && performance.now() - this._lastStateAt > 9000) {
+          this._fallbackToOfflineFromNetwork('Server stopped responding – continuing offline.');
+          return;
+        }
+      }
+
       p.attackCd = Math.max(0, p.attackCd - dt);
       p.attackAnim = Math.max(0, p.attackAnim - dt);
       p.skillAnim = Math.max(0, (p.skillAnim || 0) - dt);
       p.shieldTime = Math.max(0, p.shieldTime - dt);
       p.invuln = Math.max(0, p.invuln - dt);
+      p.hasteTime = Math.max(0, (p.hasteTime || 0) - dt);
+      p.familiarTime = Math.max(0, (p.familiarTime || 0) - dt);
       p.dashTime = Math.max(0, p.dashTime - dt);
       for (let i = 0; i < 4; i++) p.skillCd[i] = Math.max(0, (p.skillCd[i] || 0) - dt);
+      this.updateFamiliar(dt, false);
       if (p.emote) {
         if (typeof p.emote === 'object') {
           p.emote.time -= dt;
@@ -5178,6 +5357,8 @@
       if (Number.isFinite(data.skillAnim)) p.skillAnim = data.skillAnim;
       if (data.skillAnimColor) p.skillAnimColor = data.skillAnimColor;
       if (data.skillAnimName) p.skillAnimName = data.skillAnimName;
+      if (Number.isFinite(data.familiarTime)) p.familiarTime = Math.max(0, data.familiarTime);
+      if (Number.isFinite(data.hasteTime)) p.hasteTime = Math.max(0, data.hasteTime);
       if (data.spec !== undefined) p.spec = data.spec || '';
       if (data.stats && typeof data.stats === 'object') {
         p.finalStats = Object.assign({}, p.finalStats, data.stats);
@@ -5266,6 +5447,7 @@
         this.zone = this.zones[zoneId] || this.zones.forest;
         this.minimapCache = null;
         this.pet = null;                 // Pet is an offline-only visual helper.
+        this.familiar = null;
         this.otherPlayers = [];          // Remove the simulated offline crowd.
         this.party = [];
         this.enemies = [];
@@ -5337,6 +5519,8 @@
       const net = this.network;
       switch (msg.type) {
         case 'auth': {
+          this._clearConnectTimer();
+          this._lastStateAt = performance.now();
           net.token = msg.token || '';
           net.online = true;
           net.joined = false;
@@ -5402,9 +5586,11 @@
           this.applyCharacter(msg.character || msg.char, false);
           break;
         case 'init':
+          this._lastStateAt = performance.now();
           this.applyServerZone(msg);
           break;
         case 'state': {
+          this._lastStateAt = performance.now();
           const players = Array.isArray(msg.players) ? msg.players : [];
           const localName = this.loginFields.username;
           if (!net.playerId) {
@@ -5440,6 +5626,7 @@
           this.audio.sfx('hurt');
           // If auto-login failed (stale session), clear it and fall back
           if (this._pendingLogin && this.state === 'connecting') {
+            this._clearConnectTimer();
             this._clearSession();
             this._pendingLogin = null;
             this.state = 'select';
@@ -5549,6 +5736,11 @@
         this.shake = Math.max(this.shake, 9);
         return;
       }
+      if (visual === 'familiar') {
+        if (isSelf) this.familiar = new Familiar(x + 26, y - 20);
+        ring(x, y - 8, 12, 90, 0.5);
+        return;
+      }
       if (visual !== 'skill') return;
 
       if (isSelf && this.player) this.player.playSkillAnim(this, { name }, color);
@@ -5602,7 +5794,56 @@
           ring(tx, ty, 12, 112, 0.5);
           burst(tx, ty, 18, 80, 120, 0.4);
         }
-      } else {
+      } else if (classId === 'cleric') {
+        if (index === 0) {
+          line(tx, ty - 120, tx, ty + 10, 0.32, 8);
+          ring(tx, ty, 10, 65, 0.4);
+          burst(tx, ty, 12, 20, 110, 0.35);
+          this.shake = Math.max(this.shake, 4);
+        } else if (index === 1) {
+          ring(x, y - 8, 10, 50, 0.4);
+          burst(x, y - 8, 12, 18, 70, 0.4);
+        } else if (index === 2) {
+          ring(x, y - 8, 14, 45, 0.5);
+          burst(x, y - 8, 10, 16, 60, 0.35);
+        } else {
+          ring(x, y - 8, 15, 125, 0.5);
+          burst(x, y - 8, 18, 40, 140, 0.45);
+          this.shake = Math.max(this.shake, 5);
+        }
+      } else if (classId === 'rogue') {
+        if (index === 0) {
+          line(x, y - 8, tx, ty - 8, 0.22, 4);
+          ring(tx, ty, 8, 60, 0.25);
+          burst(tx, ty, 12, 22, 120, 0.28);
+        } else if (index === 1) {
+          ring(x, y - 8, 10, 80, 0.6);
+          burst(x, y - 8, 16, 28, 100, 0.5);
+        } else if (index === 2) {
+          line(x, y - 10, tx, ty - 10, 0.24, 4);
+          burst(tx, ty, 10, 16, 90, 0.35);
+        } else {
+          ring(tx, ty, 10, 75, 0.32);
+          burst(tx, ty, 16, 26, 150, 0.35);
+          this.shake = Math.max(this.shake, 7);
+        }
+      } else if (classId === 'summoner') {
+        if (index === 0) {
+          line(x, y - 10, tx, ty - 10, 0.24, 4);
+          ring(tx, ty, 6, 40, 0.3);
+          burst(tx, ty, 10, 18, 95, 0.3);
+        } else if (index === 1) {
+          ring(x, y - 8, 12, 90, 0.5);
+          burst(x, y - 8, 14, 30, 120, 0.5);
+        } else if (index === 2) {
+          ring(x, y - 8, 10, 45, 0.4);
+          burst(x, y - 8, 12, 20, 80, 0.4);
+        } else {
+          ring(x, y - 8, 15, 135, 0.55);
+          burst(x, y - 8, 22, 40, 160, 0.5);
+          this.shake = Math.max(this.shake, 6);
+        }
+      } else { // Mage
         if (index === 0) {
           ring(x, y - 10, 25, 135, 0.5);
           burst(x, y - 10, 20, 40, 160, 0.45);
@@ -5781,43 +6022,93 @@
       }
 
       this.state = 'connecting';
+      this._clearConnectTimer();
       this.network.connect();
 
-      // If already connected (socket reused), fire immediately
-      if (this.network.connected) {
-        this.onNetworkConnected();
-        return;
-      }
+      // Watch the whole handshake, not just the TCP/WebSocket open. A socket can
+      // open and still never answer auto-auth, which used to strand the game on
+      // the connecting screen forever.
+      this._armConnectTimer(7000);
 
-      // Fallback: if the server is unreachable after 5 seconds, start offline
-      if (this._connectTimer) clearTimeout(this._connectTimer);
+      // If already connected (socket reused), fire immediately
+      if (this.network.connected) this.onNetworkConnected();
+    }
+
+    _clearConnectTimer() {
+      if (this._connectTimer) {
+        clearTimeout(this._connectTimer);
+        this._connectTimer = null;
+      }
+    }
+
+    _armConnectTimer(delay = 9000) {
+      this._clearConnectTimer();
       this._connectTimer = setTimeout(() => {
         this._connectTimer = null;
-        if (this.state === 'connecting') {
-          this._pendingLogin = null;
-          this._startOffline();
-        }
-      }, 5000);
+        if (this.state !== 'connecting') return;
+        this._pendingLogin = null;
+        this.log('Server did not finish login in time – starting offline mode.', '#ffd75e');
+        this._startOffline();
+      }, delay);
     }
 
     onNetworkConnected() {
-      if (this._connectTimer) { clearTimeout(this._connectTimer); this._connectTimer = null; }
-
+      if (this.state !== 'connecting') return;
       if (this._pendingLogin) {
         // Send auto-auth (server tries login first, then register)
         const p = this._pendingLogin;
         this.network.send({ type: 'auto', username: p.username, password: p.password, classId: p.classId });
       }
+      // Keep the watchdog armed: auth, not socket open, is what ends the freeze.
+      this._armConnectTimer(10000);
     }
 
     onNetworkDisconnected() {
+      this._clearConnectTimer();
       if (this.state === 'connecting') {
         // Connection dropped while trying to enter – fall back to offline
         this._pendingLogin = null;
         this._startOffline();
         return;
       }
+      if (this.state === 'playing' && this.network.online) {
+        this._fallbackToOfflineFromNetwork('Connection lost – continuing in offline mode.');
+        return;
+      }
       this.log('Disconnected from game server.', '#ff9b9b');
+    }
+
+    // Drop the half-online state instead of leaving remote actors frozen in place.
+    _fallbackToOfflineFromNetwork(reason) {
+      this.network.online = false;
+      this.network.joined = false;
+      this.network.token = '';
+      this.network.playerId = null;
+      this.network.players.clear();
+      this.network.enemies.clear();
+      this.network.projectiles.clear();
+      this.network.pickups.clear();
+      this.otherPlayers = this.createFakePlayers();
+      this.party = [];
+      this.familiar = null;
+      this.pendingSkillIndex = null;
+      this.lockedTargetId = null;
+      this.lockTargetAt = -Infinity;
+      if (!this.zones[this.zoneId]) this.zoneId = 'village';
+      this.zone = this.zones[this.zoneId];
+      if (this.player) {
+        const maxX = this.zone.pixelW - 40;
+        const maxY = this.zone.pixelH - 40;
+        this.player.x = clamp(this.player.x, 40, Math.max(40, maxX));
+        this.player.y = clamp(this.player.y, 40, Math.max(40, maxY));
+        this.pet = new Pet(this.player.x + 24, this.player.y + 18);
+      }
+      this.resetZoneActors();
+      this.clearInput();
+      this.state = 'playing';
+      this.paused = false;
+      this.panel = null;
+      this.log(reason || 'Switched to offline mode.', '#ffd75e');
     }
 
     _startOffline() {
@@ -5832,7 +6123,10 @@
       this.zone = this.zones.village;
       this.party = [];
       this.shopStock = makeShopStock(this.selectedClass);
+      this.familiar = null;
       this.lockedTargetId = null;
+      this.lockTargetAt = -Infinity;
+      this._lastStateAt = 0;
       this.resetZoneActors();
       this.clearInput();
       this.state = 'playing';
@@ -5859,6 +6153,7 @@
       this.network.pickups.clear();
       this.player = null;
       this.pet = null;
+      this.familiar = null;
       this.party = [];
       this.networkData.guild = null;
       this.state = 'intro';
@@ -6962,6 +7257,7 @@
       this.playTime += dt;
       this.player.update(dt, this);
       if (this.pet) this.pet.update(dt, this);
+      this.updateFamiliar(dt, true);
       for (const e of this.enemies) e.update(dt, this);
       for (const op of this.otherPlayers) op.update(dt, this);
       for (const pr of this.projectiles) pr.update(dt, this);
@@ -7214,6 +7510,7 @@
       for (const op of this.otherPlayers) actors.push(op);
       if (this.player) actors.push(this.player);
       if (this.pet) actors.push(this.pet);
+      if (this.familiar) actors.push(this.familiar);
       actors.sort((a, b) => a.y - b.y);
       for (const a of actors) a.draw(ctx, this);
 
@@ -7347,63 +7644,62 @@
       const index = this.pendingSkillIndex;
       const point = this.skillAimPoint();
       const classId = this.player.classId;
-      const color = classId === 'mage' ? (index === 2 ? '#ff9c42' : '#d7b8ff')
-        : classId === 'archer' ? '#b9ffcb' : '#dceeff';
-      const angle = Math.atan2(point.y - (this.player.y - 10), point.x - this.player.x);
-      const isMeteor = classId === 'mage' && index === 2;
-      const isBlink = classId === 'mage' && index === 1;
-      const distance = isBlink ? 170 : classId === 'swordsman' ? 95 : 160;
-      const tx = isMeteor ? point.x : this.player.x + Math.cos(angle) * distance;
-      const ty = isMeteor ? point.y : this.player.y + Math.sin(angle) * distance;
+      const palette = SKILL_COLORS[classId] || SKILL_COLORS.swordsman;
+      const color = palette[index];
+      const aoeRadius = this.skillTargetRadius(index);
+      const isArea = aoeRadius > 0;
       const ctx = this.ctx;
-      const centerY = isMeteor ? ty : ty - 8;
       const pulse = 1 + Math.sin(this.time * 8) * 0.1;
       ctx.save();
-      ctx.globalAlpha = 0.72 + Math.sin(this.time * 8) * 0.12;
       ctx.strokeStyle = color;
       ctx.lineWidth = 2.5;
       ctx.shadowColor = color;
       ctx.shadowBlur = 12;
-      if (isMeteor) {
-        ctx.setLineDash([7, 5]);
-        ctx.lineDashOffset = -this.time * 18;
+
+      // Dashed aim line from the caster to the exact point that will be hit.
+      ctx.globalAlpha = 0.7;
+      ctx.setLineDash([6, 5]);
+      ctx.lineDashOffset = -this.time * 18;
+      ctx.beginPath();
+      ctx.moveTo(this.player.x, this.player.y - 8);
+      ctx.lineTo(point.x, point.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      if (isArea) {
+        // Area preview uses the real skill radius, not one hardcoded value.
+        ctx.globalAlpha = 0.35;
+        ctx.fillStyle = color;
         ctx.beginPath();
-        ctx.arc(tx, centerY, 108, 0, TAU);
-        ctx.stroke();
-        ctx.setLineDash([]);
-      } else {
-        ctx.setLineDash([6, 5]);
-        ctx.lineDashOffset = -this.time * 18;
+        ctx.arc(point.x, point.y, aoeRadius, 0, TAU);
+        ctx.fill();
+        ctx.globalAlpha = 0.9;
         ctx.beginPath();
-        ctx.moveTo(this.player.x, this.player.y - 8);
-        ctx.lineTo(tx, centerY);
+        ctx.arc(point.x, point.y, aoeRadius, 0, TAU);
         ctx.stroke();
-        ctx.setLineDash([]);
       }
 
       ctx.shadowBlur = 0;
       ctx.globalAlpha = 0.35;
       ctx.beginPath();
-      ctx.arc(tx, centerY, (isMeteor ? 22 : 18) * pulse, 0, TAU);
+      ctx.arc(point.x, point.y, 18 * pulse, 0, TAU);
       ctx.stroke();
       ctx.globalAlpha = 0.95;
-      const radius = (isMeteor ? 13 : isBlink ? 12 : 10) * pulse;
+      const radius = 10 * pulse;
       ctx.beginPath();
-      ctx.arc(tx, centerY, radius, 0, TAU);
+      ctx.arc(point.x, point.y, radius, 0, TAU);
       for (let i = 0; i < 4; i++) {
         const a = this.time * 0.8 + i * Math.PI / 2;
         const inner = radius + 3;
         const outer = radius + 9;
-        ctx.moveTo(tx + Math.cos(a) * inner, centerY + Math.sin(a) * inner);
-        ctx.lineTo(tx + Math.cos(a) * outer, centerY + Math.sin(a) * outer);
+        ctx.moveTo(point.x + Math.cos(a) * inner, point.y + Math.sin(a) * inner);
+        ctx.lineTo(point.x + Math.cos(a) * outer, point.y + Math.sin(a) * outer);
       }
       ctx.stroke();
-      if (!isMeteor) {
-        ctx.globalAlpha = 0.5;
-        ctx.beginPath();
-        ctx.arc(this.player.x, this.player.y - 8, 8 + Math.sin(this.time * 10) * 2, 0, TAU);
-        ctx.stroke();
-      }
+      ctx.globalAlpha = 0.5;
+      ctx.beginPath();
+      ctx.arc(this.player.x, this.player.y - 8, 8 + Math.sin(this.time * 10) * 2, 0, TAU);
+      ctx.stroke();
       ctx.restore();
     }
 
@@ -9048,10 +9344,10 @@
         '1 2 3 - class skills',
         'I - bag   K - skills   B - auction',
         'F - interact with NPC/portal',
-        'E emote   P invite',
+        'E emote   P pets   V leaderboard',
         'Shift+P leave   Alt+P disband (leader)',
         'Q potion   Enter chat   N raid',
-        'Tab lock   L unlock   Esc pause',
+        'Tab lock   L lock/unlock   Esc pause',
         'H - open the tutorial'
       ];
       controls.forEach((line, i) => {

@@ -62,6 +62,9 @@ const pick = arr => arr[Math.floor(Math.random() * arr.length)];
 function rand(a, b) { return a + Math.random() * (b - a); }
 function randInt(a, b) { return Math.floor(rand(a, b + 1)); }
 const round = (v, d = 2) => { const f = 10 ** d; return Math.round(v * f) / f; };
+// Projectiles collide with the same solid tiles as the client. This used to
+// reference an undefined name, which threw every tick and stopped state sync.
+const PROJECTILE_BLOCKED_TILES = new Set(BLOCKED_TILES);
 
 function normalizeSkillRanks(ranks) {
   return Array.from({ length: 4 }, (_, i) => clamp(Number(ranks && ranks[i]) || 1, 1, 5));
@@ -329,6 +332,9 @@ export class World {
     client.skillAnimName = '';
     client.shieldTime = 0;
     client.invuln = 0;
+    client.hasteTime = 0;
+    client.familiarTime = 0;
+    client.familiarCd = 0;
     client.dashTime = 0;
     client.dashDir = 0;
     client.stamina = 100;
@@ -588,6 +594,8 @@ export class World {
       skillAnim: round(client.skillAnim, 2),
       skillAnimColor: client.skillAnimColor,
       skillAnimName: client.skillAnimName,
+      hasteTime: round(client.hasteTime || 0, 2),
+      familiarTime: round(client.familiarTime || 0, 2),
       spec: character.spec || null,
       enchantGlow: glow > 0
     };
@@ -779,6 +787,8 @@ export class World {
     client.skillAnim = Math.max(0, client.skillAnim - dt);
     client.shieldTime = Math.max(0, client.shieldTime - dt);
     client.invuln = Math.max(0, client.invuln - dt);
+    client.hasteTime = Math.max(0, client.hasteTime - dt);
+    client.familiarTime = Math.max(0, client.familiarTime - dt);
     client.inCombat = Math.max(0, client.inCombat - dt);
 
     if (client.emote) {
@@ -791,6 +801,31 @@ export class World {
     client.stamina = Math.min(100, client.stamina + 22 * dt);
     if (client.inCombat <= 0 && client.alive) {
       client.hp = Math.min(stats.maxHp, client.hp + 0.8 * dt);
+    }
+
+    // Summoner familiar fights on its own while the summon is active.
+    if (client.alive && client.familiarTime > 0) {
+      client.familiarCd = Math.max(0, (client.familiarCd || 0) - dt);
+      if (client.familiarCd <= 0) {
+        let target = null;
+        let nearest = 300;
+        for (const enemy of room.enemies.values()) {
+          if (!enemy.alive) continue;
+          const d = dist(client, enemy);
+          if (d < nearest) { target = enemy; nearest = d; }
+        }
+        if (target) {
+          const a = Math.atan2(target.y - (client.y - 10), target.x - client.x);
+          this.spawnProjectile(room, {
+            x: client.x + Math.cos(a) * 26,
+            y: client.y - 10 + Math.sin(a) * 26,
+            vx: Math.cos(a) * 430, vy: Math.sin(a) * 430,
+            damage: stats.attack * 0.55,
+            ownerId: client.id, kind: 'arcane', aoe: 24, radius: 6, life: 1.8
+          });
+          client.familiarCd = 0.9;
+        }
+      }
     }
 
     if (!client.alive) {
@@ -809,7 +844,7 @@ export class World {
       client.dashTime -= dt;
       this.tryMove(room, client, Math.cos(client.dashDir) * 520 * dt, Math.sin(client.dashDir) * 520 * dt, 12);
     } else if (length > 0.01) {
-      const speed = stats.speed * (client.shieldTime > 0 ? 0.55 : 1);
+      const speed = stats.speed * (client.shieldTime > 0 ? 0.55 : 1) * (client.hasteTime > 0 ? 1.3 : 1);
       this.tryMove(room, client, dx * speed * dt, dy * speed * dt, 12);
       client.facing = Math.atan2(dy, dx);
     }
@@ -1271,7 +1306,7 @@ export class World {
         const ny = projectile.y + projectile.vy * dt / steps;
 
         // Only the solid map border blocks projectiles now.
-        if (PROJECTILE_BLOCKER.has(this.tileAt(room, nx, ny))) {
+        if (PROJECTILE_BLOCKED_TILES.has(this.tileAt(room, nx, ny))) {
           this.impactProjectile(room, projectile, nx, ny, null);
           impacted = true;
           break;
@@ -1593,18 +1628,49 @@ export class World {
 
   applyLockAim(client, message) {
     const target = this.resolveLockTarget(client, message);
-    if (target) {
+    const aimX = Number(message && message.aimX);
+    const aimY = Number(message && message.aimY);
+    // An explicit cursor/skill point always wins over a lock. Previously lock
+    // overwrote it, so clicking anywhere still aimed at the locked mob.
+    if (Number.isFinite(aimX) && Number.isFinite(aimY)) {
+      client.aim = Math.atan2(aimY - (client.y - 10), aimX - client.x);
+    } else if (Number.isFinite(Number(message && message.aim))) {
+      client.aim = Number(message.aim);
+    } else if (target) {
       client.aim = Math.atan2((target.y - 8) - (client.y - 10), target.x - client.x);
-    } else {
-      const aimX = Number(message && message.aimX);
-      const aimY = Number(message && message.aimY);
-      if (Number.isFinite(aimX) && Number.isFinite(aimY)) {
-        client.aim = Math.atan2(aimY - (client.y - 10), aimX - client.x);
-      } else if (Number.isFinite(Number(message && message.aim))) {
-        client.aim = Number(message.aim);
-      }
     }
     return target;
+  }
+
+  // Explicit cursor point > lock target > facing fallback. The client preview
+  // uses the same range clamp, so what you see is what the server hits.
+  skillTargetPoint(client, room, message, lockedTarget, defaultDistance = 200, maxRange = defaultDistance) {
+    const aim = client.aim || 0;
+    const reqX = Number(message && message.aimX);
+    const reqY = Number(message && message.aimY);
+    let x;
+    let y;
+    if (Number.isFinite(reqX) && Number.isFinite(reqY)) {
+      x = reqX;
+      y = reqY;
+    } else if (lockedTarget) {
+      x = lockedTarget.x;
+      y = lockedTarget.y - 8;
+    } else {
+      x = client.x + Math.cos(aim) * defaultDistance;
+      y = client.y - 8 + Math.sin(aim) * defaultDistance;
+    }
+    const dx = x - client.x;
+    const dy = y - (client.y - 8);
+    const distance = Math.hypot(dx, dy);
+    if (distance > maxRange) {
+      x = client.x + dx / distance * maxRange;
+      y = client.y - 8 + dy / distance * maxRange;
+    }
+    return {
+      x: clamp(x, 40, room.w * TILE - 40),
+      y: clamp(y, 40, room.h * TILE - 40)
+    };
   }
 
   handleInput(client, message) {
@@ -1613,9 +1679,11 @@ export class World {
     const lockedTarget = this.resolveLockTarget(client, message);
     let aimX = Number(message.aimX);
     let aimY = Number(message.aimY);
-    if (lockedTarget) {
-      aimX = lockedTarget.x;
-      aimY = lockedTarget.y - 8;
+    if (!Number.isFinite(aimX) || !Number.isFinite(aimY)) {
+      if (lockedTarget) {
+        aimX = lockedTarget.x;
+        aimY = lockedTarget.y - 8;
+      }
     }
     if (Number.isFinite(aimX) && Number.isFinite(aimY)) {
       client.aim = Math.atan2(aimY - (client.y - 10), aimX - client.x);
@@ -1636,7 +1704,10 @@ export class World {
     const room = this.rooms.get(client.roomId);
     if (!room) return;
     let target = this.applyLockAim(client, message);
-    if (!target) {
+    const hasExplicitAim = (Number.isFinite(Number(message && message.aimX)) &&
+      Number.isFinite(Number(message && message.aimY))) ||
+      (message && message.aim !== undefined && Number.isFinite(Number(message.aim)));
+    if (!target && !hasExplicitAim) {
       let nearestDistance = 500;
       for (const enemy of room.enemies.values()) {
         if (!enemy.alive) continue;
@@ -1653,7 +1724,9 @@ export class World {
     }
 
     const classId = client.character.classId;
-    client.attackCd = classId === 'archer' ? 0.31 : classId === 'mage' ? 0.55 : 0.45;
+    client.attackCd = classId === 'rogue' ? 0.28 : classId === 'archer' ? 0.31
+      : classId === 'cleric' ? 0.42 : classId === 'summoner' ? 0.48
+        : classId === 'mage' ? 0.55 : 0.45;
     if (client.character.spec === 'Assassin') client.attackCd *= 0.9;
     client.inCombat = 3;
 
@@ -1695,6 +1768,15 @@ export class World {
         kind: 'arrow', radius: 5, life: 2.2
       });
       this.sfxRoom(room, 'arrow');
+    } else if (classId === 'summoner') {
+      this.spawnProjectile(room, {
+        x: startX, y: startY,
+        vx: Math.cos(aim) * 440,
+        vy: Math.sin(aim) * 440,
+        damage, crit, ownerId: client.id,
+        kind: 'arcane', aoe: 35, radius: 7, life: 2.2
+      });
+      this.sfxRoom(room, 'magic');
     } else {
       this.spawnProjectile(room, {
         x: startX, y: startY,
@@ -1833,36 +1915,17 @@ export class World {
           poison: 6 * power
         });
       } else {
-        const requestedX = Number(message && message.aimX);
-        const requestedY = Number(message && message.aimY);
-        const hasTargetPoint = Number.isFinite(requestedX) && Number.isFinite(requestedY);
-        let targetX = lockedTarget ? lockedTarget.x : hasTargetPoint ? requestedX : ox + cos * 240;
-        let targetY = lockedTarget ? lockedTarget.y - 8 : hasTargetPoint ? requestedY : oy + sin * 240;
-        const dx = targetX - ox;
-        const dy = targetY - (oy - 8);
-        const distance = Math.hypot(dx, dy);
-        if (distance > 320) {
-          targetX = ox + dx / distance * 320;
-          targetY = oy - 8 + dy / distance * 320;
-        }
-        targetX = clamp(targetX, 40, room.w * TILE - 40);
-        targetY = clamp(targetY, 40, room.h * TILE - 40);
-        fx.tx = targetX;
-        fx.ty = targetY;
-        this.areaDamage(room, targetX, targetY, 112, baseDamage * 1.5, client, 'arrowRain');
+        const point = this.skillTargetPoint(client, room, message, lockedTarget, 320, 320);
+        fx.tx = point.x;
+        fx.ty = point.y;
+        this.areaDamage(room, point.x, point.y, 112, baseDamage * 1.5, client, 'arrowRain');
       }
     } else if (classId === 'cleric') {
       if (index === 0) { // Holy Smite
-        const reqX = Number(message && message.aimX);
-        const reqY = Number(message && message.aimY);
-        const hasPt = Number.isFinite(reqX) && Number.isFinite(reqY);
-        let tx = lockedTarget ? lockedTarget.x : hasPt ? reqX : ox + cos * 150;
-        let ty = lockedTarget ? lockedTarget.y - 8 : hasPt ? reqY : oy + sin * 150;
-        tx = clamp(tx, 40, room.w * TILE - 40);
-        ty = clamp(ty, 40, room.h * TILE - 40);
-        fx.tx = tx;
-        fx.ty = ty;
-        this.areaDamage(room, tx, ty, 65, baseDamage * 1.7, client, 'holy');
+        const point = this.skillTargetPoint(client, room, message, lockedTarget, 180, 180);
+        fx.tx = point.x;
+        fx.ty = point.y;
+        this.areaDamage(room, point.x, point.y, 65, baseDamage * 1.7, client, 'holy');
         this.sfxRoom(room, 'magic');
       } else if (index === 1) { // Divine Heal
         const healAmt = Math.round((def.healSelf || 65) * power);
@@ -1895,9 +1958,10 @@ export class World {
       }
     } else if (classId === 'rogue') {
       if (index === 0) { // Shadow Strike (teleport behind target)
-        let tx = ox + cos * 90;
-        let ty = oy + sin * 90;
-        if (lockedTarget) {
+        const point = this.skillTargetPoint(client, room, message, lockedTarget, 110, 110);
+        let tx = point.x;
+        let ty = point.y;
+        if (lockedTarget && dist(point, lockedTarget) < 70) {
           tx = lockedTarget.x - Math.cos(lockedTarget.facing || 0) * 28;
           ty = lockedTarget.y - Math.sin(lockedTarget.facing || 0) * 28;
         }
@@ -1907,11 +1971,11 @@ export class World {
         client.y = ty;
         fx.tx = tx;
         fx.ty = ty;
-        const critDmg = baseDamage * 1.8 * (Math.random() < stats.crit + 0.35 ? 1.8 : 1);
-        this.areaDamage(room, tx, ty, 60, critDmg, client, 'slash');
+        this.areaDamage(room, tx, ty, 60, baseDamage * 2.7, client, 'slash');
         this.sfxRoom(room, 'swing');
       } else if (index === 1) { // Smoke Bomb
         client.invuln = 2.5;
+        client.hasteTime = 2.5;
         this.areaDamage(room, client.x, client.y, 80, baseDamage * 0.5, client, 'smoke', { slow: 0.5 });
         this.eventRoom(room, 'floater', { x: client.x, y: client.y - 42, text: 'Vanish!', color: '#52ffb8' });
       } else if (index === 2) { // Poison Dart
@@ -1927,8 +1991,10 @@ export class World {
         });
         this.sfxRoom(room, 'arrow');
       } else { // Eviscerate
-        const critDmg = baseDamage * 3.0 * (Math.random() < stats.crit + 0.4 ? 1.8 : 1);
-        this.areaDamage(room, ox + cos * 35, oy + sin * 35, 75, critDmg, client, 'slash');
+        const point = this.skillTargetPoint(client, room, message, lockedTarget, 70, 70);
+        fx.tx = point.x;
+        fx.ty = point.y;
+        this.areaDamage(room, point.x, point.y, 75, baseDamage * 3.0, client, 'slash');
         this.sfxRoom(room, 'swing');
       }
     } else if (classId === 'summoner') {
@@ -1944,7 +2010,13 @@ export class World {
         });
         this.sfxRoom(room, 'magic');
       } else if (index === 1) { // Summon Familiar
-        this.areaDamage(room, client.x, client.y, 90, baseDamage * 1.5, client, 'summon');
+        this.areaDamage(room, client.x, client.y, 90, baseDamage * 0.6, client, 'summon');
+        client.familiarTime = 12;
+        client.familiarCd = 0.5;
+        this.eventRoom(room, 'fx', {
+          visual: 'familiar', ownerId: client.id, ownerName: client.character.name,
+          classId, x: client.x, y: client.y, color: fxColor
+        });
         this.eventRoom(room, 'floater', { x: client.x, y: client.y - 42, text: 'Familiar Risen!', color: '#e08bff' });
         this.sfxRoom(room, 'magic');
       } else if (index === 2) { // Spirit Ward
@@ -1973,44 +2045,16 @@ export class World {
         client.y = ny;
         this.sfxRoom(room, 'blink');
       } else if (index === 2) {
-        // Meteor lands on the locked mob or the explicit cursor target.
-        const requestedX = Number(message && message.aimX);
-        const requestedY = Number(message && message.aimY);
-        const hasTargetPoint = Number.isFinite(requestedX) && Number.isFinite(requestedY);
-        let targetX = lockedTarget ? lockedTarget.x : hasTargetPoint ? requestedX : ox + cos * 260;
-        let targetY = lockedTarget ? lockedTarget.y - 8 : hasTargetPoint ? requestedY : oy + sin * 260;
-        if (!lockedTarget) {
-          const dx = targetX - ox;
-          const dy = targetY - (oy - 8);
-          const length = Math.hypot(dx, dy);
-          if (length > 260) {
-            targetX = ox + dx / length * 260;
-            targetY = oy - 8 + dy / length * 260;
-          }
-        }
-        const tx = clamp(targetX, 40, room.w * TILE - 40);
-        const ty = clamp(targetY, 40, room.h * TILE - 40);
-        fx.tx = tx;
-        fx.ty = ty;
-        this.scheduleMeteor(room, tx, ty, baseDamage * 2.2, client.id);
+        // Meteor lands on the explicit cursor target (or the lock when no point).
+        const point = this.skillTargetPoint(client, room, message, lockedTarget, 260, 260);
+        fx.tx = point.x;
+        fx.ty = point.y;
+        this.scheduleMeteor(room, point.x, point.y, baseDamage * 2.2, client.id);
       } else {
-        const requestedX = Number(message && message.aimX);
-        const requestedY = Number(message && message.aimY);
-        const hasTargetPoint = Number.isFinite(requestedX) && Number.isFinite(requestedY);
-        let targetX = lockedTarget ? lockedTarget.x : hasTargetPoint ? requestedX : ox + cos * 220;
-        let targetY = lockedTarget ? lockedTarget.y - 8 : hasTargetPoint ? requestedY : oy + sin * 220;
-        const dx = targetX - ox;
-        const dy = targetY - (oy - 8);
-        const distance = Math.hypot(dx, dy);
-        if (distance > 260) {
-          targetX = ox + dx / distance * 260;
-          targetY = oy - 8 + dy / distance * 260;
-        }
-        targetX = clamp(targetX, 40, room.w * TILE - 40);
-        targetY = clamp(targetY, 40, room.h * TILE - 40);
-        fx.tx = targetX;
-        fx.ty = targetY;
-        this.areaDamage(room, targetX, targetY, 105, baseDamage * 1.8, client, 'arcane');
+        const point = this.skillTargetPoint(client, room, message, lockedTarget, 220, 220);
+        fx.tx = point.x;
+        fx.ty = point.y;
+        this.areaDamage(room, point.x, point.y, 105, baseDamage * 1.8, client, 'arcane');
       }
     }
 
