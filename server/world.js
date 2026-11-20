@@ -1559,6 +1559,7 @@ export class World {
       case 'trade_confirm': this.trades.confirmTrade(client); break;
       case 'trade_cancel': this.trades.cancelTrade(client); break;
       case 'pet_select': this.handlePetSelect(client, message); break;
+      case 'setPassword': this.handleSetPassword(client, message); break;
       default: this.error(client, `Unknown message type: ${type}`);
     }
   }
@@ -2766,6 +2767,22 @@ export class World {
     this.system(client, `Bonded with ${client.character.pet.name} the ${PET_TYPES[type].name}!`, '#8be9fd');
     this.syncVitals(client);
     this.sendCharacter(client);
+  }
+
+  handleSetPassword(client, message) {
+    if (!client || !client.accountId) { this.error(client, 'Not logged in.'); return; }
+    const newPassword = String(message.password || '').trim();
+    if (newPassword.length < 4) {
+      this.error(client, 'New password must be at least 4 characters.');
+      return;
+    }
+    try {
+      this.db.updatePassword(client.accountId, newPassword);
+      this.send(client, { type: 'passwordSet', success: true, newPassword });
+      this.system(client, 'Account password updated! You can now use it on other devices.', '#8ee6ff');
+    } catch (err) {
+      this.error(client, err.message);
+    }
   }
 
 }

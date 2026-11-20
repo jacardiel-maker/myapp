@@ -138,6 +138,14 @@ export class GameDB {
     return row ? { id: Number(row.id), username: row.username } : null;
   }
 
+  updatePassword(accountId, newPasswordRaw) {
+    const password = String(newPasswordRaw || '');
+    if (password.length < 4) throw new Error('Password must be at least 4 characters.');
+    const { salt, hash } = this.hashPassword(password);
+    this.db.prepare('UPDATE accounts SET password_hash = ?, salt = ? WHERE id = ?').run(hash, salt, accountId);
+    return true;
+  }
+
   // ---------- Character cloud saves ----------
 
   getCharacter(accountId) {

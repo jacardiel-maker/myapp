@@ -4011,6 +4011,8 @@
       this.session = this._readSession();
       this._pendingLogin = null;
       this._connectTimer = null;
+      this.accountPasswordInput = '';
+      this.showAccountPassword = false;
       this.selectedItemUid = null;
       this.actionText = '';
       this.actionGold = '';
@@ -4347,7 +4349,8 @@
       // EXPANSION 3/5: on-canvas text fields in auction/mail/guild panels.
       if (this.textField) {
         const key = this.textField === 'mailGold' ? 'actionGold'
-          : this.textField === 'mailMessage' ? 'actionMessage' : 'actionText';
+          : this.textField === 'mailMessage' ? 'actionMessage'
+          : this.textField === 'newAccountPass' ? 'accountPasswordInput' : 'actionText';
         if (k === 'escape' || k === 'enter') { this.textField = null; this.clearInput(); }
         else if (k === 'backspace') this[key] = this[key].slice(0, -1);
         else if (e.key.length === 1 && this[key].length < 60) {
@@ -5192,6 +5195,16 @@
           }
           this.applyCharacter(msg.character || msg.char, true);
           net.send({ type: 'join' });
+          break;
+        }
+        case 'passwordSet': {
+          if (msg.success && msg.newPassword) {
+            const user = this.session ? this.session.username : (this.player ? this.player.name : 'Hero');
+            this._saveSession(user, msg.newPassword);
+            this.accountPasswordInput = '';
+            this.log('★ Password updated and saved on this device!', '#8ee6ff');
+            this.audio.sfx('level');
+          }
           break;
         }
         case 'achievement_unlocked': {
@@ -6602,6 +6615,30 @@
           this.audio.sfx('ui');
           break;
         case 'closeMobileMenu': this.mobileMenuOpen = false; break;
+        case 'openAccount':
+          this.panel = 'account';
+          this.paused = false;
+          this.mobileMenuOpen = false;
+          this.accountPasswordInput = '';
+          this.showAccountPassword = false;
+          this.clearInput();
+          this.audio.sfx('ui');
+          break;
+        case 'toggleShowPassword':
+          this.showAccountPassword = !this.showAccountPassword;
+          this.audio.sfx('ui');
+          break;
+        case 'savePassword':
+          if (!this.network.online) {
+            this.log('Must be connected online to change password.', '#ff9b9b');
+            return;
+          }
+          if (this.accountPasswordInput.trim().length < 4) {
+            this.log('Password must be at least 4 characters.', '#ff9b9b');
+            return;
+          }
+          this.network.send({ type: 'setPassword', password: this.accountPasswordInput.trim() });
+          break;
         case 'settings': this.paused = true; this.clearInput(); this.audio.sfx('ui'); break;
         case 'interact': this.interact(); break;
         case 'emote': this.emote(); break;
@@ -6932,6 +6969,7 @@
       else if (this.panel === 'leaderboardModal') this.drawLeaderboardModalPanel();
       else if (this.panel === 'trade') this.drawTradePanel();
       else if (this.panel === 'pets') this.drawPetsPanel();
+      else if (this.panel === 'account') this.drawAccountPanel();
 
       if (this.paused) this.drawPauseMenu();
       if (this.input.mobile && !this.paused && !this.panel) {
@@ -8680,6 +8718,65 @@
       this.button(x + 590, y + 410, 150, 26, 'CLOSE', 'closePanel', { color: '#34405c' });
     }
 
+    drawAccountPanel() {
+      const ctx = this.ctx;
+      const x = 190;
+      const y = 60;
+      const w = 580;
+      const h = 420;
+      ctx.fillStyle = 'rgba(4,7,16,0.78)';
+      ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+      panel(ctx, x, y, w, h, 'Account & Device Transfer');
+
+      const username = this.session ? this.session.username : (this.player ? this.player.name : 'Hero');
+      const pass = this.session ? this.session.password : 'offline-guest';
+
+      ctx.font = 'bold 13px monospace';
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#8ee6ff';
+      ctx.fillText(`Hero Account: ${username}`, x + 30, y + 50);
+
+      ctx.font = '11px monospace';
+      ctx.fillStyle = '#9fb0cd';
+      ctx.fillText(`Realm Status: ${this.network.online ? '🟢 Online (Shared Persistent Realm)' : '⚪ Offline Mode'}`, x + 30, y + 74);
+
+      ctx.fillStyle = '#ffd75e';
+      ctx.font = 'bold 12px monospace';
+      ctx.fillText('Play on another Device (Phone, Tablet, or PC):', x + 30, y + 112);
+
+      ctx.font = '11px monospace';
+      ctx.fillStyle = '#c8d3ea';
+      ctx.fillText('1. Check your Hero Name and Password below.', x + 30, y + 134);
+      ctx.fillText('2. Open this game website on your other browser/device.', x + 30, y + 152);
+      ctx.fillText('3. Click "SWITCH ACCT / LOGIN (O)" on the title screen.', x + 30, y + 170);
+      ctx.fillText('4. Enter your Hero Name & Password to resume playing!', x + 30, y + 188);
+
+      // Current Password display with show/hide
+      ctx.fillStyle = '#9fb0cd';
+      ctx.font = '11px monospace';
+      ctx.fillText('Device Password:', x + 30, y + 224);
+      ctx.fillStyle = '#101726';
+      ctx.fillRect(x + 160, y + 206, 230, 28);
+      ctx.strokeStyle = '#58668a';
+      ctx.strokeRect(x + 160.5, y + 206.5, 229, 27);
+      ctx.fillStyle = '#8ee6ff';
+      ctx.font = '12px monospace';
+      ctx.fillText(this.showAccountPassword ? pass : '••••••••••••••••', x + 170, y + 225);
+
+      this.button(x + 400, y + 206, 80, 28, this.showAccountPassword ? 'HIDE' : 'SHOW', 'toggleShowPassword', { color: '#34405c', fontSize: 9 });
+
+      // Change Password field
+      ctx.fillStyle = '#9fb0cd';
+      ctx.font = '11px monospace';
+      ctx.fillText('Set Custom Password:', x + 30, y + 270);
+      this.textInput(x + 160, y + 252, 230, 28, 'newAccountPass', this.accountPasswordInput, 24);
+      this.button(x + 400, y + 252, 140, 28, 'SET PASSWORD', 'savePassword', { color: '#3f7d55', border: '#8ee6a8', fontSize: 9 });
+
+      // Action buttons
+      this.button(x + 30, y + 340, 190, 36, 'SWITCH ACCOUNT', 'switchAccount', { color: '#6b3542', border: '#ff8a9b', fontSize: 10 });
+      this.button(x + w - 140, y + 340, 110, 36, 'CLOSE', 'closePanel', { color: '#34405c', fontSize: 11 });
+    }
+
     drawTutorialPanel() {
       const ctx = this.ctx;
       const step = TUTORIAL_STEPS[this.tutorialStep];
@@ -8775,7 +8872,8 @@
         ctx.fillStyle = '#b9c7e6';
         ctx.fillText(line, x + 26, y + 206 + i * 14);
       });
-      this.button(x + 106, y + 350, 160, 30, 'QUIT TO TITLE', 'quitToSelect', { color: '#6b3542' });
+      this.button(x + 26, y + 350, 150, 30, 'ACCOUNT / PASS', 'openAccount', { color: '#2f5f8c' });
+      this.button(x + 196, y + 350, 150, 30, 'QUIT TO TITLE', 'quitToSelect', { color: '#6b3542' });
     }
 
     // STAGE 5: on-screen joystick + attack/skill/interact buttons.
@@ -8853,6 +8951,7 @@
         { label: 'CHAT', action: 'chat' },
         { label: 'RAID', action: 'enterDungeon', online: true },
         { label: 'SETTINGS', action: 'settings', color: '#5b4b8c' },
+        { label: 'ACCOUNT', action: 'openAccount', color: '#2f5f8c' },
         { label: 'SAVE', action: 'save' },
         { label: 'CLOSE', action: 'closeMobileMenu', color: '#6b3542' }
       ];
