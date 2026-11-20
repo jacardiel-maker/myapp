@@ -2190,6 +2190,7 @@
       this.autoSaveTimer = 0;
       this.enemySpawnTimer = 0;
       this.lockedTargetId = null; // Mob lock-on target (works offline and online).
+      this.mobileMenuOpen = false; // Touch-friendly feature drawer.
 
       this.zones = {
         forest: createZone('forest'),
@@ -3867,6 +3868,7 @@
         return;
       }
       this.textField = null;
+      if (action !== 'toggleMobileMenu') this.mobileMenuOpen = false;
       if (/^skill[0-2]$/.test(action)) {
         const i = parseInt(action.slice(5), 10);
         if (this.network.online) this.network.send({ type: 'skill', index: i, lockTargetId: this.lockedTargetId });
@@ -3897,6 +3899,12 @@
           else this.player && this.player.attack(this);
           break;
         case 'lockTarget': this.toggleLockTarget(); break;
+        case 'toggleMobileMenu':
+          this.mobileMenuOpen = !this.mobileMenuOpen;
+          this.audio.sfx('ui');
+          break;
+        case 'closeMobileMenu': this.mobileMenuOpen = false; break;
+        case 'settings': this.paused = true; this.clearInput(); this.audio.sfx('ui'); break;
         case 'interact': this.interact(); break;
         case 'emote': this.emote(); break;
         case 'party': this.inviteParty(); break;
@@ -3914,6 +3922,7 @@
         case 'openGuild': this.panel = 'guild'; if (this.network.online) this.network.send({ type: 'guildInfo' }); break;
         case 'openCraft': this.panel = 'craft'; break;
         case 'openTalents': this.panel = 'talents'; break;
+        case 'openQuest': this.panel = 'quest'; break;
         case 'closePanel': this.panel = null; break;
         case 'enterDungeon': if (this.network.online) this.network.send({ type: 'dungeon' }); break;
         case 'leaveDungeon': if (this.network.online) this.network.send({ type: 'leaveDungeon' }); break;
@@ -4123,7 +4132,10 @@
       else if (this.panel === 'talents') this.drawTalentsPanel();
 
       if (this.paused) this.drawPauseMenu();
-      if (this.input.mobile && !this.paused && !this.panel) this.drawMobileControls();
+      if (this.input.mobile && !this.paused && !this.panel) {
+        if (this.mobileMenuOpen) this.drawMobileMenu();
+        else this.drawMobileControls();
+      }
       this.drawDraggedItem();
     }
 
@@ -5328,6 +5340,60 @@
       roundButton(VIEW_W - 122, VIEW_H - 138, 20, 'E', 'emote', '#5d7f55');
       roundButton(VIEW_W - 178, VIEW_H - 168, 24,
         this.lockedTargetId == null ? 'LOCK' : 'FREE', 'lockTarget', '#a45a3c');
+      roundButton(VIEW_W - 40, VIEW_H - 208, 22, 'MENU', 'toggleMobileMenu', '#3f5f8f');
+    }
+
+    // Touch equivalent of the keyboard shortcuts: every PC feature in one drawer.
+    drawMobileMenu() {
+      const ctx = this.ctx;
+      const x = 142;
+      const y = 38;
+      const w = 676;
+      const h = 464;
+      ctx.fillStyle = 'rgba(4,7,14,0.72)';
+      ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+      panel(ctx, x, y, w, h,
+        `MOBILE MENU - ${this.network.online ? 'ONLINE' : 'OFFLINE'}  SP ${this.player ? this.player.skillPoints : 0}`);
+
+      const items = [
+        { label: 'BAG / ITEMS', action: 'openInventory' },
+        { label: 'SKILL PTS', action: 'openSkills' },
+        { label: 'TALENTS', action: 'openTalents' },
+        { label: 'CRAFT', action: 'openCraft' },
+        { label: 'AUCTION', action: 'openAuction', online: true },
+        { label: 'MAIL', action: 'openMail', online: true },
+        { label: 'GUILD', action: 'openGuild', online: true },
+        { label: 'QUEST', action: 'openQuest' },
+        { label: 'PARTY', action: 'party' },
+        { label: 'POTION', action: 'potion' },
+        { label: 'CHAT', action: 'chat' },
+        { label: 'RAID', action: 'enterDungeon', online: true },
+        { label: 'SETTINGS', action: 'settings', color: '#5b4b8c' },
+        { label: 'SAVE', action: 'save' },
+        { label: 'CLOSE', action: 'closeMobileMenu', color: '#6b3542' }
+      ];
+      const cols = 3;
+      const bw = 196;
+      const bh = 58;
+      const gapX = 18;
+      const gapY = 12;
+      const startX = x + 26;
+      const startY = y + 54;
+      items.forEach((item, i) => {
+        const bx = startX + (i % cols) * (bw + gapX);
+        const by = startY + Math.floor(i / cols) * (bh + gapY);
+        const unavailable = item.online && !this.network.online;
+        this.button(bx, by, bw, bh, item.label, item.action, {
+          color: unavailable ? '#3a3f50' : (item.color || '#34405c'),
+          textColor: unavailable ? '#8c97ad' : '#fff',
+          fontSize: 11
+        });
+      });
+
+      ctx.font = '10px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#9fb0cd';
+      ctx.fillText('Settings includes volume, save/load and quit.', VIEW_W / 2, y + h - 14);
     }
 
   }
