@@ -2729,7 +2729,11 @@
       this.stateQueue = [];
       const params = new URLSearchParams(location.search);
       const wsHost = location.host || `${location.hostname || 'localhost'}:3000`;
-      this.url = params.get('ws') || `${location.protocol === 'https:' ? 'wss' : 'ws'}://${wsHost}/ws`;
+      const isLocalHost = ['localhost', '127.0.0.1', '::1'].includes(location.hostname);
+      const defaultUrl = isLocalHost
+        ? `${location.protocol === 'https:' ? 'wss' : 'ws'}://${wsHost}/ws`
+        : 'wss://myapp-gbm5.onrender.com/ws';
+      this.url = params.get('ws') || defaultUrl;
     }
     connect() {
       if (this.socket && (this.connected || this.connecting)) return;
