@@ -493,8 +493,9 @@ export class World {
     client.player = null;
     client.roomId = null;
     client.party = new Set();
-    client.lastInput = { dx: 0, dy: 0, aimX: null, aimY: null };
+    client.lastInput = { dx: 0, dy: 0, aimX: null, aimY: null, lockTargetId: null };
     client.lastInputAt = 0;
+    client.lockTargetId = null;
     client.facing = 0;
     client.aim = 0;
     client.attackCd = 0;
@@ -1540,7 +1541,7 @@ export class World {
 
     switch (type) {
       case 'input': this.handleInput(client, message); break;
-      case 'attack': this.handleAttack(client); break;
+      case 'attack': this.handleAttack(client, message); break;
       case 'skill': this.handleSkill(client, message); break;
       case 'interact': this.handleInteract(client); break;
       case 'dungeon': this.handleDungeon(client); break;
@@ -1575,28 +1576,70 @@ export class World {
     }
   }
 
+  // Lock-on is validated server-side: the id must be a living mob in this room
+  // and close enough to be a plausible target.
+  resolveLockTarget(client, message) {
+    const raw = message && message.lockTargetId !== undefined
+      ? message.lockTargetId
+      : client.lockTargetId;
+    if (raw === null || raw === undefined || raw === '') {
+      client.lockTargetId = null;
+      return null;
+    }
+    const room = this.rooms.get(client.roomId);
+    if (!room) return null;
+
+    let enemy = room.enemies.get(raw) || room.enemies.get(Number(raw));
+    if (!enemy) {
+      for (const candidate of room.enemies.values()) {
+        if (String(candidate.id) === String(raw)) { enemy = candidate; break; }
+      }
+    }
+    if (!enemy || !enemy.alive || dist(client, enemy) > 900) {
+      client.lockTargetId = null;
+      return null;
+    }
+    client.lockTargetId = enemy.id;
+    return enemy;
+  }
+
+  applyLockAim(client, message) {
+    const target = this.resolveLockTarget(client, message);
+    if (target) {
+      client.aim = Math.atan2((target.y - 8) - (client.y - 10), target.x - client.x);
+    }
+    return target;
+  }
+
   handleInput(client, message) {
     const dx = clamp(Number(message.dx) || 0, -1, 1);
     const dy = clamp(Number(message.dy) || 0, -1, 1);
-    const aimX = Number(message.aimX);
-    const aimY = Number(message.aimY);
+    const lockedTarget = this.resolveLockTarget(client, message);
+    let aimX = Number(message.aimX);
+    let aimY = Number(message.aimY);
+    if (lockedTarget) {
+      aimX = lockedTarget.x;
+      aimY = lockedTarget.y - 8;
+    }
     if (Number.isFinite(aimX) && Number.isFinite(aimY)) {
       client.aim = Math.atan2(aimY - (client.y - 10), aimX - client.x);
     }
     client.lastInput = {
       dx, dy,
       aimX: Number.isFinite(aimX) ? aimX : null,
-      aimY: Number.isFinite(aimY) ? aimY : null
+      aimY: Number.isFinite(aimY) ? aimY : null,
+      lockTargetId: client.lockTargetId
     };
     client.lastInputAt = Date.now();
   }
 
   // ---------- Normal attacks ----------
 
-  handleAttack(client) {
+  handleAttack(client, message = {}) {
     if (!client.alive || client.attackCd > 0) return;
     const room = this.rooms.get(client.roomId);
     if (!room) return;
+    this.applyLockAim(client, message);
 
     const classId = client.character.classId;
     client.attackCd = classId === 'archer' ? 0.31 : classId === 'mage' ? 0.55 : 0.45;
@@ -1661,6 +1704,7 @@ export class World {
 
     const room = this.rooms.get(client.roomId);
     if (!room) return;
+    const lockedTarget = this.applyLockAim(client, message);
 
     client.mp -= def.cost;
     client.stamina -= staminaCost;
@@ -1775,8 +1819,9 @@ export class World {
         client.y = ny;
         this.sfxRoom(room, 'blink');
       } else {
-        const tx = clamp(ox + cos * 260, 40, room.w * TILE - 40);
-        const ty = clamp(oy + sin * 260, 40, room.h * TILE - 40);
+        // Meteor lands on the locked mob when one is selected, otherwise ahead.
+        const tx = clamp(lockedTarget ? lockedTarget.x : ox + cos * 260, 40, room.w * TILE - 40);
+        const ty = clamp(lockedTarget ? lockedTarget.y - 8 : oy + sin * 260, 40, room.h * TILE - 40);
         fx.tx = tx;
         fx.ty = ty;
         this.scheduleMeteor(room, tx, ty, baseDamage * 2.2, client.id);

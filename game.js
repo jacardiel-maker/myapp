@@ -1159,6 +1159,7 @@
 
     attack(game) {
       if (this.attackCd > 0) return;
+      this.aim = game.getAimAngle(this);
       this.attackCd = this.classId === 'archer' ? 0.31 : this.classId === 'mage' ? 0.55 : 0.45;
       this.attackAnim = 0.35;
       const crit = Math.random() < this.critChance;
@@ -1224,6 +1225,7 @@
           : ['#9ce7ff', '#d7b8ff', '#ff9c42'];
       this.playSkillAnim(game, def, fxColors[index]);
       game.log(`${this.name} used ${def.name}!`, fxColors[index]);
+      this.aim = game.getAimAngle(this);
       const aim = this.aim;
       const baseDamage = this.finalStats.attack * power;
 
@@ -2187,6 +2189,7 @@
       this.playerInCombat = 0;
       this.autoSaveTimer = 0;
       this.enemySpawnTimer = 0;
+      this.lockedTargetId = null; // Mob lock-on target (works offline and online).
 
       this.zones = {
         forest: createZone('forest'),
@@ -2320,7 +2323,7 @@
       this.pointerDownUI = false;
       if (this.network && this.network.online && this.network.connected && this.network.joined && this.player) {
         const aim = this.getAimPoint();
-        this.network.send({ type: 'input', dx: 0, dy: 0, aimX: aim.x, aimY: aim.y, aim: this.player.aim });
+        this.network.send({ type: 'input', dx: 0, dy: 0, aimX: aim.x, aimY: aim.y, aim: this.player.aim, lockTargetId: this.lockedTargetId });
       }
     }
 
@@ -2410,12 +2413,12 @@
 
       switch (k) {
         case ' ':
-          if (this.network.online) this.network.send({ type: 'attack' });
+          if (this.network.online) this.network.send({ type: 'attack', lockTargetId: this.lockedTargetId });
           else this.player && this.player.attack(this);
           break;
         case '1': case '2': case '3': {
           const idx = Number(k) - 1;
-          if (this.network.online) this.network.send({ type: 'skill', index: idx });
+          if (this.network.online) this.network.send({ type: 'skill', index: idx, lockTargetId: this.lockedTargetId });
           else this.player && this.player.useSkill(idx, this);
           break;
         }
@@ -2430,6 +2433,8 @@
         case 'n': if (this.network.online) this.network.send({ type: 'dungeon' }); else this.log('Dungeons require online mode.', '#ffd75e'); break;
         case 'e': this.emote(); break;
         case 'p': this.inviteParty(); break;
+        case 'tab': this.cycleLockTarget(e.shiftKey ? -1 : 1); break;
+        case 'l': this.toggleLockTarget(); break;
         case 'q':
           if (this.network.online) this.network.send({ type: 'potion' });
           else if (this.player) { const idx = this.player.inventory.findIndex(it => it.slot === 'consumable'); if (idx >= 0) this.player.usePotion(idx, this); }
@@ -2499,7 +2504,7 @@
           !(p.x < 370 && p.y > VIEW_H - 140)) {
         if (this.player) {
           this.player.aim = this.getAimAngle(this.player);
-          if (this.network.online) this.network.send({ type: 'attack', aim: this.player.aim });
+          if (this.network.online) this.network.send({ type: 'attack', aim: this.player.aim, lockTargetId: this.lockedTargetId });
           else this.player.attack(this);
         }
       }
@@ -2692,16 +2697,98 @@
       return list;
     }
 
-    getAimPoint() {
+    rawAimPoint() {
       return { x: this.pointer.x + this.camX, y: this.pointer.y + this.camY };
     }
 
+    targetableEnemies() {
+      return this.enemies.filter(e => e && e.alive !== false &&
+        Number.isFinite(e.x) && Number.isFinite(e.y));
+    }
+
+    currentLockTarget() {
+      if (this.lockedTargetId === null || this.lockedTargetId === undefined) return null;
+      const target = this.enemies.find(e => e && String(e.id) === String(this.lockedTargetId));
+      return target && target.alive !== false ? target : null;
+    }
+
+    // Lock-on overrides aiming for attacks and skills, but selection still uses
+    // the raw cursor/facing so cycling always starts from what the player points at.
+    getAimPoint() {
+      const target = this.currentLockTarget();
+      if (target) return { x: target.x, y: target.y - 8 };
+      return this.rawAimPoint();
+    }
+
     getAimAngle(entity) {
+      const target = this.currentLockTarget();
+      if (target) {
+        return Math.atan2((target.y - 8) - (entity.y - 10), target.x - entity.x);
+      }
       if (this.pointer.inside && this.pointer.lastMove > this.time - 8) {
-        const p = this.getAimPoint();
+        const p = this.rawAimPoint();
         return Math.atan2(p.y - (entity.y - 10), p.x - entity.x);
       }
       return entity.facing || 0;
+    }
+
+    enemyLabel(enemy) {
+      return enemy && enemy.type ? enemy.type[0].toUpperCase() + enemy.type.slice(1) : 'Enemy';
+    }
+
+    selectionAimPoint() {
+      if (this.pointer.inside && this.pointer.lastMove > this.time - 8 && this.pointer.type !== 'touch') {
+        return this.rawAimPoint();
+      }
+      const facing = this.player ? (this.player.aim || this.player.facing || 0) : 0;
+      const px = this.player ? this.player.x : this.camX + VIEW_W / 2;
+      const py = this.player ? this.player.y - 8 : this.camY + VIEW_H / 2;
+      return { x: px + Math.cos(facing) * 260, y: py + Math.sin(facing) * 260 };
+    }
+
+    cycleLockTarget(dir = 1) {
+      if (!this.player) return;
+      const aim = this.selectionAimPoint();
+      const candidates = this.targetableEnemies()
+        .map(e => ({
+          enemy: e,
+          distance: dist(this.player, e),
+          score: Math.hypot(e.x - aim.x, e.y - aim.y)
+        }))
+        .filter(c => c.distance < 820)
+        .sort((a, b) => a.score - b.score || a.distance - b.distance);
+
+      if (!candidates.length) {
+        this.lockedTargetId = null;
+        this.log('No target in range.', '#ff9b9b');
+        return;
+      }
+
+      let index = candidates.findIndex(c => String(c.enemy.id) === String(this.lockedTargetId));
+      index = index < 0
+        ? (dir > 0 ? 0 : candidates.length - 1)
+        : (index + dir + candidates.length) % candidates.length;
+      this.lockedTargetId = candidates[index].enemy.id;
+      this.audio.sfx('ui');
+      this.log(`Target locked: ${this.enemyLabel(candidates[index].enemy)}`, '#ffd75e');
+    }
+
+    toggleLockTarget() {
+      if (this.lockedTargetId !== null && this.lockedTargetId !== undefined) this.unlockTarget();
+      else this.cycleLockTarget(1);
+    }
+
+    unlockTarget() {
+      if (this.lockedTargetId === null || this.lockedTargetId === undefined) return;
+      this.lockedTargetId = null;
+      this.audio.sfx('ui');
+      this.log('Target released.', '#9aa6bd');
+    }
+
+    updateLockTarget() {
+      if (this.lockedTargetId === null || this.lockedTargetId === undefined) return;
+      const target = this.currentLockTarget();
+      if (!target || !this.player || dist(this.player, target) > 900) this.lockedTargetId = null;
     }
 
     // ============================================================
@@ -2762,7 +2849,7 @@
         this.inputSendTimer = 0;
         const aim = this.getAimPoint();
         // dx/dy and aim are sent as world coordinates; the server integrates movement.
-        net.send({ type: 'input', dx, dy, aimX: aim.x, aimY: aim.y, aim: p.aim });
+        net.send({ type: 'input', dx, dy, aimX: aim.x, aimY: aim.y, aim: p.aim, lockTargetId: this.lockedTargetId });
       }
     }
 
@@ -2916,6 +3003,7 @@
       this.zones[zoneId] = zone;
       this.network.roomId = init.roomId || '';
       this.network.joined = true;
+      this.lockedTargetId = null;
       this.portals = (Array.isArray(init.portals) ? init.portals : []).map(p => Object.assign({}, p, { radius: 30 }));
       // Keep the same NPC coordinates as the server so F opens shop/quest online.
       this.npcs = zoneId === 'forest' ? NPC_DEFS.map(n => new Npc(n.type, n.name, n.x, n.y)) : [];
@@ -3241,6 +3329,7 @@
       this.panel = null;
       this.chatOpen = false;
       this.textField = null;
+      this.lockedTargetId = null;
     }
 
     startNewGame() {
@@ -3255,6 +3344,7 @@
       this.zone = this.zones.forest;
       this.party = [];
       this.shopStock = makeShopStock();
+      this.lockedTargetId = null;
       this.resetZoneActors();
       this.clearInput();
       this.state = 'playing';
@@ -3344,6 +3434,7 @@
       this.playTime = data.playTime || 0;
       this.shopStock = makeShopStock();
       this.party = [];
+      this.lockedTargetId = null;
       if (this.isBlocked(player.x, player.y, player.radius)) {
         player.x = fallback.x;
         player.y = fallback.y;
@@ -3359,6 +3450,7 @@
 
     resetZoneActors() {
       this.zone = this.zones[this.zoneId];
+      this.lockedTargetId = null;
       this.enemies = [];
       this.pickups = [];
       this.projectiles = [];
@@ -3777,7 +3869,7 @@
       this.textField = null;
       if (/^skill[0-2]$/.test(action)) {
         const i = parseInt(action.slice(5), 10);
-        if (this.network.online) this.network.send({ type: 'skill', index: i });
+        if (this.network.online) this.network.send({ type: 'skill', index: i, lockTargetId: this.lockedTargetId });
         else this.player && this.player.useSkill(i, this);
         return;
       }
@@ -3801,9 +3893,10 @@
         case 'login': this.networkLogin('login'); break;
         case 'register': this.networkLogin('register'); break;
         case 'attack':
-          if (this.network.online) this.network.send({ type: 'attack' });
+          if (this.network.online) this.network.send({ type: 'attack', lockTargetId: this.lockedTargetId });
           else this.player && this.player.attack(this);
           break;
+        case 'lockTarget': this.toggleLockTarget(); break;
         case 'interact': this.interact(); break;
         case 'emote': this.emote(); break;
         case 'party': this.inviteParty(); break;
@@ -3886,6 +3979,7 @@
       this.playerInCombat = Math.max(0, this.playerInCombat - dt);
       if (this.state !== 'playing' || this.paused || this.panel) return;
       if (!this.player) return;
+      this.updateLockTarget();
 
       if (this.network.online) {
         this.updateNetwork(dt);
@@ -4092,7 +4186,38 @@
 
       // Falling meteors are drawn as Effect('meteor') so offline and online match.
       for (const e of this.effects) e.draw(ctx);
+      this.drawLockTarget();
       for (const f of this.floaters) f.draw(ctx);
+      ctx.restore();
+    }
+
+    // A clear reticle makes the locked mob obvious on desktop and mobile.
+    drawLockTarget() {
+      const target = this.currentLockTarget();
+      if (!target) return;
+      const ctx = this.ctx;
+      const cy = target.y - 8;
+      const r = (target.type === 'boss' ? 34 : 24) + Math.sin(this.time * 6) * 2;
+      ctx.save();
+      ctx.globalAlpha = 0.95;
+      ctx.strokeStyle = '#ffd75e';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(target.x, cy, r, 0, TAU);
+      ctx.stroke();
+      ctx.globalAlpha = 0.7;
+      ctx.beginPath();
+      ctx.arc(target.x, cy, r + 6, this.time * 2.2, this.time * 2.2 + 1.3);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      const inner = r - 7;
+      const outer = r + 4;
+      ctx.beginPath();
+      ctx.moveTo(target.x - outer, cy); ctx.lineTo(target.x - inner, cy);
+      ctx.moveTo(target.x + inner, cy); ctx.lineTo(target.x + outer, cy);
+      ctx.moveTo(target.x, cy - outer); ctx.lineTo(target.x, cy - inner);
+      ctx.moveTo(target.x, cy + inner); ctx.lineTo(target.x, cy + outer);
+      ctx.stroke();
       ctx.restore();
     }
 
@@ -5150,7 +5275,7 @@
         'F - interact with NPC/portal',
         'E - emote   P - invite party',
         'Q - potion   Enter - chat   N - raid',
-        'Esc - pause'
+        'Tab - lock   L - unlock   Esc - pause'
       ];
       controls.forEach((line, i) => {
         ctx.font = '10px monospace';
@@ -5201,6 +5326,8 @@
       roundButton(VIEW_W - 258, VIEW_H - 44, 20, '3', 'skill2', '#4b6ba8');
       roundButton(VIEW_W - 70, VIEW_H - 158, 24, 'F', 'interact', '#8a6bb8');
       roundButton(VIEW_W - 122, VIEW_H - 138, 20, 'E', 'emote', '#5d7f55');
+      roundButton(VIEW_W - 178, VIEW_H - 168, 24,
+        this.lockedTargetId == null ? 'LOCK' : 'FREE', 'lockTarget', '#a45a3c');
     }
 
   }
