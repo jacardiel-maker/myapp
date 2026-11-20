@@ -1168,7 +1168,7 @@ export class World {
     // If the tab loses focus the browser stops sending input. Do not keep running.
     if (now - client.lastInputAt > 800) { dx = 0; dy = 0; }
     const length = Math.hypot(dx, dy);
-    if (length > 1) { dx /= length; dy /= length; }
+    if (length > 0.01) { dx /= length; dy /= length; }
 
     if (client.dashTime > 0) {
       client.dashTime -= dt;
