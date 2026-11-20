@@ -1097,7 +1097,7 @@
       this.skillAnimColor = color || CLASS_DATA[this.classId].color;
       this.skillAnimName = def && def.name ? def.name : '';
       if (game && this.skillAnimName) {
-        game.addFloater(this.x, this.y - 58, this.skillAnimName, this.skillAnimColor, 11);
+        game.addFloater(this.x, this.y - 76, this.skillAnimName, this.skillAnimColor, 11);
       }
     }
 
@@ -1362,7 +1362,7 @@
 
     gainXp(amount, game) {
       this.xp += amount;
-      game.addFloater(this.x, this.y - 52, `+${amount} XP`, '#8ee6ff', 11);
+      game.addFloater(this.x, this.y - 76, `+${amount} XP`, '#8ee6ff', 11);
       while (this.xp >= this.xpNext) {
         this.xp -= this.xpNext;
         this.levelUp(game);
@@ -1376,7 +1376,7 @@
       this.recalculateStats(false);
       this.hp = this.maxHp;
       this.mp = this.maxMp;
-      game.addFloater(this.x, this.y - 62, 'LEVEL UP!', '#ffd75e', 18);
+      game.addFloater(this.x, this.y - 96, 'LEVEL UP!', '#ffd75e', 18);
       game.log(`Level up! You are now level ${this.level}. (Skill point earned)`, '#ffd75e');
       game.audio.sfx('level');
       game.shake = Math.max(game.shake, 5);
@@ -1431,7 +1431,7 @@
       const blink = this.invuln > 0 && Math.floor(game.time * 18) % 2 === 0;
       drawSprite(ctx, playerSprite(this.classId, frame, attacking, this.equipment, { spec: this.spec }), this.x, this.y, SPRITE_SCALE, blink ? 0.45 : 1);
       drawNameTag(ctx, this.name, `Lv ${this.level} ${CLASS_DATA[this.classId].name}`, this.x, this.y - 42, CLASS_DATA[this.classId].color);
-      if (this.emote) drawEmote(ctx, this.x, this.y - 58, this.emote.text);
+      if (this.emote) drawEmote(ctx, this.x, this.y - 78, this.emote.text);
     }
   }
 
@@ -1814,7 +1814,7 @@
       drawSprite(ctx, playerSprite(this.classId, this.walkFrame, false, {}), this.x, this.y, SPRITE_SCALE);
       drawNameTag(ctx, this.name, `Lv ${this.level} ${CLASS_DATA[this.classId].name}${this.party ? ' *' : ''}`, this.x, this.y - 42, this.party ? '#ffd75e' : '#a9c7ff');
       drawBar(ctx, this.x - 15, this.y - 46, 30, 3, this.hp / this.maxHp, '#6ee787');
-      if (this.emote) drawEmote(ctx, this.x, this.y - 60, this.emote.text);
+      if (this.emote) drawEmote(ctx, this.x, this.y - 78, this.emote.text);
     }
   }
 
@@ -2015,7 +2015,7 @@
       drawSprite(ctx, playerSprite(this.classId, frame, this.attackAnim > 0, {}, { spec: this.spec }), this.x, this.y, SPRITE_SCALE);
       drawNameTag(ctx, this.name, `Lv ${this.level} ${CLASS_DATA[this.classId].name}${this.party ? ' *' : ''}`, this.x, this.y - 42, this.party ? '#ffd75e' : '#b9d9ff');
       drawBar(ctx, this.x - 15, this.y - 46, 30, 3, this.hp / this.maxHp, '#6ee787');
-      if (this.emote) drawEmote(ctx, this.x, this.y - 60, this.emote.text);
+      if (this.emote) drawEmote(ctx, this.x, this.y - 78, this.emote.text);
     }
   }
 
@@ -2254,6 +2254,19 @@
 
     // Ask the browser to lock landscape when possible. Most mobile browsers
     // only allow this from a user gesture, so it is called on every first tap.
+    goFullscreen() {
+      if (!this.input.mobile || document.fullscreenElement) return;
+      const el = document.documentElement;
+      const request = el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen;
+      if (!request) return;
+      try {
+        const result = request.call(el);
+        if (result && typeof result.catch === 'function') result.catch(() => {});
+      } catch (err) {
+        // Ignored: the canvas still fills the visible viewport via CSS.
+      }
+    }
+
     requestLandscape() {
       const screenObj = window.screen;
       const orientation = screenObj && (screenObj.orientation || screenObj.mozOrientation || screenObj.msOrientation);
@@ -2272,7 +2285,10 @@
       window.addEventListener('keydown', e => this.onKeyDown(e));
       window.addEventListener('keyup', e => this.onKeyUp(e));
       window.addEventListener('blur', () => this.clearInput());
-      window.addEventListener('pointerdown', () => this.requestLandscape(), { passive: true });
+      window.addEventListener('pointerdown', () => {
+        this.requestLandscape();
+        this.goFullscreen();
+      }, { passive: true });
       this.canvas.addEventListener('pointerdown', e => this.onPointerDown(e));
       window.addEventListener('pointermove', e => this.onPointerMove(e));
       window.addEventListener('pointerup', e => this.onPointerUp(e));
@@ -2552,7 +2568,12 @@
     }
 
     addFloater(x, y, text, color, size) {
-      this.floaters.push(new FloatingText(x, y, text, color, size));
+      // Stack nearby text upward so skill names, XP gains and emotes never overlap.
+      let fy = y;
+      for (const f of this.floaters) {
+        if (Math.abs(f.x - x) < 80 && Math.abs(f.y - fy) < 16) fy -= 16;
+      }
+      this.floaters.push(new FloatingText(x, fy, text, color, size));
     }
 
     // Visible XP burst shared by offline kills and server 'xpDrop' events.
@@ -3049,7 +3070,7 @@
       else {
         const remote = this.network.players.get(String(ownerId));
         if (remote) remote.playSkillAnim(color);
-        this.addFloater(x, y - 58, name, color, 11);
+        this.addFloater(x, y - 76, name, color, 11);
       }
 
       const cos = Math.cos(aim);
@@ -3136,13 +3157,13 @@
           if (amount > 0) {
             const x = Number.isFinite(ev.x) ? ev.x : (this.player ? this.player.x : 0);
             const y = Number.isFinite(ev.y) ? ev.y : (this.player ? this.player.y : 0);
-            this.addFloater(x, y - 52, `+${amount} XP`, '#8ee6ff', 11);
+            this.addFloater(x, y - 76, `+${amount} XP`, '#8ee6ff', 11);
           }
           break;
         }
         case 'level':
           this.log(`LEVEL UP! You are now level ${ev.level}.`, '#ffd75e');
-          if (this.player) this.addFloater(this.player.x, this.player.y - 64, 'LEVEL UP!', '#ffd75e', 18);
+          if (this.player) this.addFloater(this.player.x, this.player.y - 96, 'LEVEL UP!', '#ffd75e', 18);
           this.shake = Math.max(this.shake, 5);
           this.audio.sfx('level');
           break;
@@ -4177,10 +4198,13 @@
       drawBar(ctx, 22, 86, 230, 10, p.xp / p.xpNext, '#b57bff', `XP ${p.xp}/${p.xpNext}`);
       ctx.font = 'bold 11px monospace';
       ctx.fillStyle = '#ffd75e';
+      ctx.textAlign = 'left';
       ctx.fillText(`Gold: ${p.gold}`, 22, 108);
       if (p.skillPoints > 0) {
         ctx.fillStyle = '#8ee6ff';
-        ctx.fillText(`Skill points: ${p.skillPoints} (K)`, 118, 108);
+        ctx.textAlign = 'right';
+        ctx.fillText(`SP: ${p.skillPoints} (K)`, 252, 108);
+        ctx.textAlign = 'left';
       }
       if (this.network.online) {
         const tabs = [
