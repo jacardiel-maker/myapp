@@ -2855,35 +2855,16 @@
       return !!(window.matchMedia && window.matchMedia('(orientation: portrait) and (pointer: coarse)').matches);
     }
 
-    // Fullscreen and orientation locks require a user gesture in most browsers.
+    // Fullscreen requires a user gesture; never request it while the phone is portrait.
     goFullscreen() {
-      if (!this.input.mobile || document.fullscreenElement) return;
+      if (!this.input.mobile || this.isPortraitMobile() || document.fullscreenElement) return;
       const el = document.documentElement;
       const request = el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen;
-      if (!request) { this.requestLandscape(); return; }
+      if (!request) return;
       try {
-        this.requestLandscape();
         const result = request.call(el);
-        if (result && typeof result.then === 'function') {
-          result.then(() => this.requestLandscape()).catch(() => this.requestLandscape());
-        } else this.requestLandscape();
-      } catch (err) {
-        this.requestLandscape();
-      }
-    }
-
-    requestLandscape() {
-      const screenObj = window.screen;
-      const orientation = screenObj && (screenObj.orientation || screenObj.mozOrientation || screenObj.msOrientation);
-      const type = orientation && (orientation.type || orientation);
-      if (typeof type === 'string' && type.indexOf('landscape') === 0) return;
-      if (!orientation || typeof orientation.lock !== 'function') return;
-      try {
-        const result = orientation.lock('landscape');
         if (result && typeof result.catch === 'function') result.catch(() => {});
-      } catch (err) {
-        // CSS rotates the landscape canvas on browsers that reject this lock.
-      }
+      } catch (err) { /* Fullscreen may be unavailable in this browser. */ }
     }
 
     nativeTextInputConfig() {
@@ -2915,21 +2896,13 @@
       }
 
       const rect = this.canvas.getBoundingClientRect();
-      const rotated = this.isPortraitMobile();
-      const sx = rotated ? rect.height / VIEW_W : rect.width / VIEW_W;
-      const sy = rotated ? rect.width / VIEW_H : rect.height / VIEW_H;
+      const sx = rect.width / VIEW_W;
+      const sy = rect.height / VIEW_H;
       input.style.display = 'block';
-      if (rotated) {
-        input.style.left = `${rect.left + rect.width - (config.y + config.h - 3) * sy}px`;
-        input.style.top = `${rect.top + (config.x + 6) * sx}px`;
-        input.style.width = `${Math.max(24, (config.h - 6) * sy)}px`;
-        input.style.height = `${Math.max(20, (config.w - 12) * sx)}px`;
-      } else {
-        input.style.left = `${rect.left + (config.x + 6) * sx}px`;
-        input.style.top = `${rect.top + 3 * sy + config.y * sy}px`;
-        input.style.width = `${Math.max(24, (config.w - 12) * sx)}px`;
-        input.style.height = `${Math.max(20, (config.h - 6) * sy)}px`;
-      }
+      input.style.left = `${rect.left + (config.x + 6) * sx}px`;
+      input.style.top = `${rect.top + 3 * sy + config.y * sy}px`;
+      input.style.width = `${Math.max(24, (config.w - 12) * sx)}px`;
+      input.style.height = `${Math.max(20, (config.h - 6) * sy)}px`;
       if (input.type !== config.type) input.type = config.type;
       if (input.maxLength !== config.maxLength) input.maxLength = config.maxLength;
       if (input.inputMode !== 'text') input.inputMode = 'text';
@@ -2965,12 +2938,16 @@
         this.goFullscreen();
       }, { passive: true, capture: true });
       document.addEventListener('fullscreenchange', () => {
-        if (this.input.mobile && document.fullscreenElement) this.requestLandscape();
         this.syncNativeTextInputOverlay();
       });
       document.addEventListener('webkitfullscreenchange', () => {
-        if (this.input.mobile) this.requestLandscape();
         this.syncNativeTextInputOverlay();
+      });
+      window.addEventListener('orientationchange', () => {
+        window.setTimeout(() => {
+          this.syncNativeTextInputOverlay();
+          if (!this.isPortraitMobile()) this.goFullscreen();
+        }, 120);
       });
       this.canvas.addEventListener('pointerdown', e => this.onPointerDown(e));
       window.addEventListener('pointermove', e => this.onPointerMove(e));
@@ -2984,12 +2961,6 @@
 
     pointerPos(e) {
       const rect = this.canvas.getBoundingClientRect();
-      if (this.isPortraitMobile()) {
-        return {
-          x: (e.clientY - rect.top) * VIEW_W / rect.height,
-          y: (rect.left + rect.width - e.clientX) * VIEW_H / rect.width
-        };
-      }
       return {
         x: (e.clientX - rect.left) * VIEW_W / rect.width,
         y: (e.clientY - rect.top) * VIEW_H / rect.height

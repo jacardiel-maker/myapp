@@ -49,17 +49,55 @@ body {
   }
 }
 
-/* CSS fallback for mobile browsers that do not allow orientation locking.
-   Rotate the landscape game itself so the screen remains playable in portrait. */
+/* Keep the game inaccessible until the device is physically in landscape. */
+#rotate-device {
+  display: none;
+}
+
 @media (orientation: portrait) and (pointer: coarse) {
   #game {
-    position: fixed;
-    top: 50%;
-    left: 50%;
-    width: 100vh;
-    height: 100vw;
-    max-width: none;
-    transform: translate(-50%, -50%) rotate(90deg);
-    transform-origin: center;
+    display: none;
   }
+
+  #rotate-device {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 18px;
+    padding: 32px;
+    color: #dbe6ff;
+    text-align: center;
+    background:
+      radial-gradient(circle at 50% 35%, rgba(111, 208, 255, 0.12), transparent 55%),
+      #070a12;
+  }
+
+  #rotate-device strong {
+    font-size: 20px;
+    letter-spacing: 2px;
+    color: #8ee6ff;
+  }
+
+  #rotate-device span {
+    font-size: 12px;
+    color: #9fb0cd;
+  }
+
+  .rotate-phone {
+    width: 52px;
+    height: 88px;
+    border: 4px solid #8ee6ff;
+    border-radius: 10px;
+    animation: rotatePhone 1.8s ease-in-out infinite;
+    box-shadow: 0 0 24px rgba(142, 230, 255, 0.35);
+  }
+}
+
+@keyframes rotatePhone {
+  0%, 25% { transform: rotate(0deg); }
+  60%, 100% { transform: rotate(90deg); }
 }
