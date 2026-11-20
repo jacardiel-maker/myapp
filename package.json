@@ -1,0 +1,15 @@
+{
+  "name": "pixel-realm-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Dependency-free authoritative Node.js server for Pixel Realm.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "check": "node --check server.js && node --check server/net.js && node --check server/db.js && node --check server/world.js"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
