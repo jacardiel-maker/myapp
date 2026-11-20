@@ -2252,10 +2252,27 @@
       ));
     }
 
+    // Ask the browser to lock landscape when possible. Most mobile browsers
+    // only allow this from a user gesture, so it is called on every first tap.
+    requestLandscape() {
+      const screenObj = window.screen;
+      const orientation = screenObj && (screenObj.orientation || screenObj.mozOrientation || screenObj.msOrientation);
+      const type = orientation && (orientation.type || orientation);
+      if (typeof type === 'string' && type.indexOf('landscape') === 0) return;
+      if (!orientation || typeof orientation.lock !== 'function') return;
+      try {
+        const result = orientation.lock('landscape');
+        if (result && typeof result.catch === 'function') result.catch(() => {});
+      } catch (err) {
+        // Ignored: the CSS rotate prompt still blocks portrait play.
+      }
+    }
+
     bindEvents() {
       window.addEventListener('keydown', e => this.onKeyDown(e));
       window.addEventListener('keyup', e => this.onKeyUp(e));
       window.addEventListener('blur', () => this.clearInput());
+      window.addEventListener('pointerdown', () => this.requestLandscape(), { passive: true });
       this.canvas.addEventListener('pointerdown', e => this.onPointerDown(e));
       window.addEventListener('pointermove', e => this.onPointerMove(e));
       window.addEventListener('pointerup', e => this.onPointerUp(e));
