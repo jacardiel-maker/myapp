@@ -1,279 +1,70 @@
 /*
   server/world.js
   The authoritative game world.
-
-  "Authoritative" means the server owns the truth: positions, combat, drops,
-  quests and progression are calculated here. The browser only sends intentions
-  ("I am holding W", "I clicked attack") and receives snapshots.
-
-  Written in plain JavaScript with beginner comments on purpose.
+  Refactored into clean ES modules:
+    - items.js (6 equipment slots, drops, shops, relics)
+    - classes.js (6 classes, skill configs, specs, talents)
+    - zones.js (8 zones: village, forest, cave, desert, frost_cave, volcano, swamp, arena, dungeon)
+    - combat.js (elemental variants, elite affixes, boss mechanics & telegraphs, PvP)
+    - achievements.js (milestones, tracking, rewards)
+    - daily.js (daily bounties, seeded daily quests)
+    - leaderboards.js (rankings for level, gold, boss, pvp)
+    - trade.js (real-time player-to-player trading)
+    - pets.js (pet companion leveling, stats & skills)
 */
-// ---------- Constants (kept in sync with the browser game) ----------
 
-const TILE = 32;
+import {
+  VALID_EQUIP_SLOTS, ALL_ITEM_SLOTS, RARITY, ROLE_ITEM_ART, ROLE_ITEM_DEFS,
+  makeItem, weaponClassFor, itemCanEquip, starterItems, roleItem,
+  randomShopItem, makeShopStock, generateMonsterDrop, normalizeItem,
+  compactInventory, teleportScroll
+} from './items.js';
 
-const TILE_ID = {
-  GRASS: 0,
-  WATER: 1,
-  TREE: 2,
-  SAND: 3,
-  ROCK: 4,
-  CAVE: 5,
-  CACTUS: 6,
-  PATH: 7,
-  HOUSE_ROOF: 8,
-  HOUSE_WALL: 9
+import {
+  CLASS_DATA, SKILLS, TALENT_IDS, SPECIALIZATIONS, SPEC_MODS
+} from './classes.js';
+
+import {
+  TILE, TILE_ID, BLOCKED_TILES, ZONE_SPAWN, PORTAL_DEFS,
+  ZONE_ENEMY_COUNTS, ZONE_MUL, NPC_DEFS, VILLAGE_NPC_DEFS,
+  DUNGEON_SPAWN, DUNGEON_BOSS, generateZone, generateDungeon, mulberry32
+} from './zones.js';
+
+import {
+  ENEMY_BASE_STATS, createEnemy, updateBossMechanics
+} from './combat.js';
+
+import {
+  ACHIEVEMENTS, normalizeAchievements, updateAchievementProgress, claimAchievementReward
+} from './achievements.js';
+
+import {
+  getDailyQuestsForDate, normalizeDailyQuests, updateDailyProgress, claimDailyReward
+} from './daily.js';
+
+import { LeaderboardManager } from './leaderboards.js';
+import { TradeManager } from './trade.js';
+
+import {
+  PET_TYPES, freshPet, normalizePet, addPetXp, getPetAuraStats
+} from './pets.js';
+
+// Re-export for compatibility
+export {
+  VALID_EQUIP_SLOTS, CLASS_DATA, SKILLS, ZONE_SPAWN, PORTAL_DEFS,
+  makeItem, starterItems, normalizeItem, compactInventory
 };
-
-// Trees, water, cacti, cave walls and village buildings block movement and shots.
-const BLOCKED_TILES = new Set([TILE_ID.WATER, TILE_ID.TREE, TILE_ID.ROCK, TILE_ID.CACTUS, TILE_ID.HOUSE_ROOF, TILE_ID.HOUSE_WALL]);
-const PROJECTILE_BLOCKER = new Set(BLOCKED_TILES);
-
-const CLASS_DATA = {
-  swordsman: { name: 'Swordsman', maxHp: 145, attack: 18, speed: 108, range: 54, mana: 60, manaRegen: 7, defense: 4, color: '#8fd0ff' },
-  archer: { name: 'Archer', maxHp: 95, attack: 14, speed: 142, range: 285, mana: 80, manaRegen: 9, defense: 1, color: '#84e39a' },
-  mage: { name: 'Mage', maxHp: 72, attack: 22, speed: 112, range: 190, mana: 125, manaRegen: 11, defense: 0, color: '#c99bff' }
-};
-
-const SKILLS = {
-  swordsman: [
-    { name: 'Dash Strike', cost: 15, cd: 5 },
-    { name: 'Shield Block', cost: 10, cd: 8 },
-    { name: 'Whirlwind', cost: 25, cd: 9 },
-    { name: 'Seismic Slam', cost: 32, cd: 12 }
-  ],
-  archer: [
-    { name: 'Multi-Shot', cost: 18, cd: 5 },
-    { name: 'Roll Dodge', cost: 12, cd: 6 },
-    { name: 'Poison Arrow', cost: 20, cd: 8 },
-    { name: 'Arrow Rain', cost: 30, cd: 10 }
-  ],
-  mage: [
-    { name: 'Ice Nova', cost: 25, cd: 8 },
-    { name: 'Blink', cost: 18, cd: 6 },
-    { name: 'Meteor', cost: 40, cd: 12 },
-    { name: 'Arcane Burst', cost: 32, cd: 9 }
-  ]
-};
-
-function normalizeSkillRanks(ranks) {
-  return Array.from({ length: 4 }, (_, i) => clamp(Number(ranks && ranks[i]) || 1, 1, 5));
-}
-
-const RARITY = {
-  common: { color: '#dedede', mult: 1 },
-  rare: { color: '#62b4ff', mult: 1.35 },
-  epic: { color: '#ca83ff', mult: 1.8 }
-};
-
-const EMOTES = ['Hi!', 'GG!', '^^', 'LOL', 'Thanks!', 'Boss soon?', '<3', 'Zzz'];
-const TALENT_IDS = ['power', 'haste', 'vigor', 'crit', 'guard', 'focus'];
-const SPECS = {
-  swordsman: ['Guardian', 'Berserker'],
-  archer: ['Ranger', 'Assassin'],
-  mage: ['Pyromancer', 'Cryomancer']
-};
-
-const EFFECT_COLORS = {
-  flame: '#ff7a4d',
-  frost: '#8ee6ff',
-  void: '#c99bff',
-  thunder: '#ffe66d'
-};
-
-const ZONE_SPAWN = {
-  forest: { x: 520, y: 420 },
-  cave: { x: 270, y: 300 },
-  desert: { x: 2780, y: 1980 },
-  village: { x: 1552, y: 1168 }
-};
-
-const PORTAL_DEFS = {
-  forest: [
-    { x: 2860, y: 300, to: 'cave', label: 'Cave', color: '#b08bff', arrive: { x: 270, y: 300 } },
-    { x: 220, y: 2080, to: 'desert', label: 'Desert', color: '#ffb35c', arrive: { x: 2780, y: 1980 } }
-  ],
-  cave: [
-    { x: 230, y: 240, to: 'forest', label: 'Forest', color: '#7bdc7b', arrive: { x: 2820, y: 360 } },
-    { x: 2860, y: 2080, to: 'desert', label: 'Desert', color: '#ffb35c', arrive: { x: 220, y: 2080 } }
-  ],
-  desert: [
-    { x: 2760, y: 1980, to: 'cave', label: 'Cave', color: '#b08bff', arrive: { x: 2820, y: 2080 } },
-    { x: 240, y: 260, to: 'forest', label: 'Forest', color: '#7bdc7b', arrive: { x: 270, y: 2080 } }
-  ],
-  village: [
-    { x: 1552, y: 656, to: 'forest', label: 'Forest Gate', color: '#7bdc7b', arrive: { x: 520, y: 420 } }
-  ]
-};
-
-const NPC_DEFS = [
-  { type: 'shop', name: 'Merchant Mina', x: 620, y: 380, radius: 14 },
-  { type: 'quest', name: 'Elder Tarn', x: 770, y: 430, radius: 14 }
-];
-const VILLAGE_NPC_DEFS = [
-  { type: 'guard', name: 'Village Guard', x: 1650, y: 1168, radius: 15 },
-  { type: 'healer', name: 'Healer Liora', x: 1424, y: 1168, radius: 14 },
-  { type: 'scout', name: 'Scout Rowan', x: 1552, y: 1008, radius: 14 },
-  { type: 'blacksmith', name: 'Blacksmith Borin', x: 1760, y: 1168, radius: 14 },
-  { type: 'villager', name: 'Farmer Pella', x: 1552, y: 1296, radius: 14 }
-];
-
-const ZONE_ENEMY_COUNTS = {
-  forest: { slime: 15, goblin: 6 },
-  cave: { slime: 6, goblin: 7, brute: 4 },
-  desert: { slime: 8, goblin: 9, scout: 4 },
-  village: {}
-};
-
-const ZONE_MUL = { forest: 1, cave: 1.7, desert: 2.4, village: 1 };
-const DUNGEON_SPAWN = { x: 5 * TILE + TILE / 2, y: 18 * TILE + TILE / 2 };
-const DUNGEON_BOSS = { x: 30 * TILE, y: 18 * TILE };
-
-// ---------- Small helpers ----------
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 const angleDiff = (a, b) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)));
 const pick = arr => arr[Math.floor(Math.random() * arr.length)];
-
 function rand(a, b) { return a + Math.random() * (b - a); }
 function randInt(a, b) { return Math.floor(rand(a, b + 1)); }
+const round = (v, d = 2) => { const f = 10 ** d; return Math.round(v * f) / f; };
 
-// A tiny seeded random generator so tile maps are deterministic.
-function mulberry32(seed) {
-  return function () {
-    let t = seed += 0x6D2B79F5;
-    t = Math.imul(t ^ t >>> 15, t | 1);
-    t ^= t + Math.imul(t ^ t >>> 7, t | 61);
-    return ((t ^ t >>> 14) >>> 0) / 4294967296;
-  };
-}
-
-function round(n, places = 1) {
-  const f = 10 ** places;
-  return Math.round((Number(n) || 0) * f) / f;
-}
-
-// ---------- Deterministic maps ----------
-
-function clearCircle(zone, x, y, tileRadius, baseTile) {
-  const tx = Math.floor(x / TILE);
-  const ty = Math.floor(y / TILE);
-  for (let yy = ty - tileRadius; yy <= ty + tileRadius; yy++) {
-    for (let xx = tx - tileRadius; xx <= tx + tileRadius; xx++) {
-      if (xx < 0 || yy < 0 || xx >= zone.w || yy >= zone.h) continue;
-      if (Math.hypot(xx - tx, yy - ty) <= tileRadius) zone.tiles[yy * zone.w + xx] = baseTile;
-    }
-  }
-}
-
-function paintVillage(zone) {
-  const put = (x, y, tile) => {
-    if (x >= 0 && y >= 0 && x < zone.w && y < zone.h) zone.tiles[y * zone.w + x] = tile;
-  };
-  for (let x = 24; x <= 72; x++) { put(x, 35, TILE_ID.PATH); put(x, 36, TILE_ID.PATH); }
-  for (let y = 18; y <= 52; y++) { put(47, y, TILE_ID.PATH); put(48, y, TILE_ID.PATH); }
-  for (let y = 31; y <= 40; y++) for (let x = 43; x <= 52; x++) {
-    if (Math.hypot(x - 47.5, y - 35.5) <= 5) put(x, y, TILE_ID.PATH);
-  }
-  for (const [x, y] of [[33, 25], [56, 25], [33, 43], [56, 43]]) {
-    for (let dy = 0; dy < 4; dy++) for (let dx = 0; dx < 7; dx++) put(x + dx, y + dy, TILE_ID.HOUSE_ROOF);
-    for (let dy = 4; dy < 8; dy++) for (let dx = 0; dx < 7; dx++) put(x + dx, y + dy, TILE_ID.HOUSE_WALL);
-  }
-}
-
-function generateZone(id) {
-  const w = 96;
-  const h = 72;
-  const tiles = new Uint8Array(w * h);
-  const baseTile = id === 'forest' || id === 'village' ? TILE_ID.GRASS : id === 'cave' ? TILE_ID.CAVE : TILE_ID.SAND;
-
-  // Start with open terrain and a cave border. Decorative patches are added below.
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      const border = id === 'cave' && (x < 2 || y < 2 || x >= w - 2 || y >= h - 2);
-      tiles[y * w + x] = border ? TILE_ID.ROCK : baseTile;
-    }
-  }
-  // Obstacle patches mirror the browser map generator and stay clear of landmarks.
-  if (id === 'forest' || id === 'desert') {
-    const rng = mulberry32(id === 'forest' ? 4101 : 4103);
-    const safePoints = [ZONE_SPAWN[id], ...PORTAL_DEFS[id].flatMap(p => [p, p.arrive]),
-      ...(id === 'forest' ? NPC_DEFS : [])];
-    for (let y = 5; y < h - 5; y++) {
-      for (let x = 5; x < w - 5; x++) {
-        if (rng() > 0.018) continue;
-        const px = x * TILE + TILE / 2;
-        const py = y * TILE + TILE / 2;
-        if (safePoints.some(p => Math.hypot(p.x - px, p.y - py) < 230)) continue;
-        const radius = rng() < 0.28 ? 2 : 1;
-        for (let oy = -radius; oy <= radius; oy++) {
-          for (let ox = -radius; ox <= radius; ox++) {
-            if (Math.abs(ox) + Math.abs(oy) > radius + 1) continue;
-            const tx = x + ox;
-            const ty = y + oy;
-            if (tx < 2 || ty < 2 || tx >= w - 2 || ty >= h - 2) continue;
-            tiles[ty * w + tx] = id === 'forest'
-              ? (rng() < 0.72 ? TILE_ID.TREE : TILE_ID.WATER)
-              : TILE_ID.CACTUS;
-          }
-        }
-      }
-    }
-  }
-  if (id === 'village') paintVillage({ w, h, tiles });
-  return { id, w, h, tiles };
-}
-
-function generateDungeon() {
-  const w = 48;
-  const h = 36;
-  const tiles = new Uint8Array(w * h);
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      const border = x < 2 || y < 2 || x >= w - 2 || y >= h - 2;
-      tiles[y * w + x] = border ? TILE_ID.ROCK : TILE_ID.CAVE;
-    }
-  }
-
-  // No interior pillars: the boss arena stays completely open so nobody can
-  // get stuck or lose a projectile behind cover.
-  const zone = { w, h, tiles };
-  clearCircle(zone, DUNGEON_SPAWN.x, DUNGEON_SPAWN.y, 3, TILE_ID.CAVE);
-  clearCircle(zone, DUNGEON_BOSS.x, DUNGEON_BOSS.y, 5, TILE_ID.CAVE);
-  return zone;
-}
-
-// ---------- Items ----------
-
-// Starting this high avoids clashing with uids saved by an earlier server run.
-let nextItemId = 1000000 + (Date.now() % 100000);
-
-function makeItem(name, slot, rarity, stats = {}, extra = {}) {
-  const rarityKey = RARITY[rarity] ? rarity : 'common';
-  const slotKey = ['weapon', 'armor', 'consumable'].includes(slot) ? slot : 'consumable';
-  return {
-    uid: Number(extra.uid) || nextItemId++,
-    name: String(name || 'Item').slice(0, 40),
-    slot: slotKey,
-    rarity: rarityKey,
-    stats: {
-      hp: 0, attack: 0, defense: 0, speed: 0, range: 0, mana: 0, crit: 0, manaRegen: 0,
-      ...(stats && typeof stats === 'object' ? stats : {})
-    },
-    classId: extra.classId || null,
-    spriteColor: extra.spriteColor || RARITY[rarityKey].color,
-    icon: extra.icon || String(name || 'I')[0],
-    art: extra.art || null,
-    price: Math.max(1, Math.floor(extra.price || Math.round(25 * RARITY[rarityKey].mult))),
-    heal: Math.max(0, Math.floor(extra.heal || 0)),
-    quantity: slotKey === 'consumable' ? clamp(Math.floor(Number(extra.quantity) || 1), 1, 99) : 1,
-    teleportTo: extra.teleportTo || null,
-    desc: String(extra.desc || '').slice(0, 200),
-    enchant: clamp(Math.floor(Number(extra.enchant) || 0), 0, 5),
-    effect: extra.effect || null,
-    color: extra.color || null
-  };
+function normalizeSkillRanks(ranks) {
+  return Array.from({ length: 4 }, (_, i) => clamp(Number(ranks && ranks[i]) || 1, 1, 5));
 }
 
 function sameConsumableStack(a, b) {
@@ -286,175 +77,6 @@ function itemSellValue(item) {
   const unitValue = Math.max(1, Math.floor((Number(item && item.price) || 1) * 0.5));
   const quantity = item && item.slot === 'consumable' ? clamp(Math.floor(Number(item.quantity) || 1), 1, 99) : 1;
   return unitValue * quantity;
-}
-
-function compactInventory(items) {
-  const compact = [];
-  for (const item of items) {
-    const stack = compact.find(existing => sameConsumableStack(existing, item) &&
-      (existing.quantity || 1) + (item.quantity || 1) <= 99);
-    if (stack) stack.quantity = (stack.quantity || 1) + (item.quantity || 1);
-    else if (compact.length < 20) compact.push(item);
-  }
-  return compact;
-}
-
-function teleportScroll() {
-  return makeItem('Village Teleport Scroll', 'consumable', 'rare', {}, {
-    art: 'scroll', icon: 'T', price: 55, teleportTo: 'village',
-    desc: 'A one-use scroll that teleports you to Hearthvale Village.'
-  });
-}
-
-// One signature epic per role. The art key must match the client so images
-// survive cloud saves, mail, auctions and shop purchases.
-const ROLE_ITEM_ART = {
-  swordsman: 'roleSword',
-  archer: 'roleBow',
-  mage: 'roleStaff'
-};
-
-const ROLE_ITEM_DEFS = {
-  swordsman: {
-    name: 'Dawnfang Blade', art: ROLE_ITEM_ART.swordsman, icon: 'S',
-    stats: { attack: 18, hp: 12, speed: 4, crit: 0.02 },
-    effect: 'flame', spriteColor: '#eef5ff', color: '#ffd27a', price: 420,
-    desc: 'Swordsman relic: a sunlit blade that burns on impact.'
-  },
-  archer: {
-    name: 'Windsong Bow', art: ROLE_ITEM_ART.archer, icon: 'B',
-    stats: { attack: 14, speed: 12, range: 28, crit: 0.04 },
-    effect: 'frost', spriteColor: '#9ce7c4', color: '#8ee6ff', price: 420,
-    desc: 'Archer relic: a living bow that hums with the north wind.'
-  },
-  mage: {
-    name: 'Astral Flame Staff', art: ROLE_ITEM_ART.mage, icon: 'T',
-    stats: { attack: 16, mana: 24, range: 18, manaRegen: 1.5 },
-    effect: 'void', spriteColor: '#c9a6ff', color: '#ffb15c', price: 420,
-    desc: 'Mage relic: focuses starlight into an eternal flame.'
-  }
-};
-
-function roleItem(classId) {
-  const def = ROLE_ITEM_DEFS[classId] || ROLE_ITEM_DEFS.swordsman;
-  return makeItem(def.name, 'weapon', 'epic', def.stats, {
-    classId,
-    art: def.art,
-    icon: def.icon,
-    spriteColor: def.spriteColor,
-    color: def.color,
-    effect: def.effect,
-    price: def.price,
-    desc: def.desc
-  });
-}
-
-function weaponClassFor(item) {
-  if (!item || item.slot !== 'weapon') return null;
-  const role = Object.entries(ROLE_ITEM_DEFS).find(([id, def]) =>
-    item.art === ROLE_ITEM_ART[id] || item.name === def.name);
-  if (role) return role[0];
-  if (item.art === 'sword' || /sword|blade|runed edge/i.test(item.name || '')) return 'swordsman';
-  if (item.art === 'bow' || /\bbow\b/i.test(item.name || '')) return 'archer';
-  if (item.art === 'staff' || /staff|wand/i.test(item.name || '')) return 'mage';
-  return null;
-}
-
-function itemCanEquip(item, classId) {
-  if (!item || !['weapon', 'armor'].includes(item.slot)) return false;
-  const requiredClass = item.slot === 'weapon' ? (weaponClassFor(item) || item.classId) : item.classId;
-  return !requiredClass || requiredClass === classId;
-}
-
-// Accept loosely shaped items from old saves / client messages and tidy them.
-function normalizeItem(raw, defaultClassId = null) {
-  if (!raw || typeof raw !== 'object') return null;
-  const roleClassId = Object.entries(ROLE_ITEM_DEFS)
-    .find(([id, def]) => raw.art === ROLE_ITEM_ART[id] || raw.name === def.name)?.[0];
-  const typeClassId = weaponClassFor({ slot: raw.slot, art: raw.art, name: raw.name });
-  return makeItem(raw.name, raw.slot, raw.rarity, raw.stats, {
-    uid: raw.uid,
-    classId: roleClassId || typeClassId || raw.classId || (['weapon', 'armor'].includes(raw.slot) ? defaultClassId : null),
-    spriteColor: raw.spriteColor,
-    icon: raw.icon,
-    price: raw.price,
-    heal: raw.heal,
-    quantity: raw.quantity,
-    teleportTo: raw.teleportTo,
-    desc: raw.desc,
-    enchant: raw.enchant,
-    effect: raw.effect,
-    color: raw.color,
-    art: raw.art
-  });
-}
-
-function starterItems(classId) {
-  const weapon = classId === 'swordsman'
-    ? makeItem('Iron Sword', 'weapon', 'common', { attack: 5 }, { classId, art: 'sword', spriteColor: '#d4e0ec', desc: 'Swordsman weapon. A trusty blade.' })
-    : classId === 'archer'
-      ? makeItem('Short Bow', 'weapon', 'common', { attack: 4 }, { classId, art: 'bow', spriteColor: '#9c6a3d', desc: 'Archer weapon. Light and quick.' })
-      : makeItem('Oak Staff', 'weapon', 'common', { attack: 6 }, { classId, art: 'staff', spriteColor: '#b37b45', desc: 'Mage weapon. Channels fire magic.' });
-
-  const armorColor = classId === 'mage' ? '#8b63c8' : classId === 'archer' ? '#5c9b66' : '#7896c4';
-  const armor = makeItem('Traveler Gear', 'armor', 'common', { hp: 10, defense: 2 }, {
-    classId,
-    art: 'armor',
-    spriteColor: armorColor,
-    desc: 'Basic adventurer clothes.'
-  });
-
-  return {
-    equipment: { weapon, armor },
-    inventory: [
-      makeItem('Health Potion', 'consumable', 'common', {}, { art: 'potion', icon: 'P', heal: 55, quantity: 2, price: 20, desc: 'Restores 55 HP.' })
-    ]
-  };
-}
-
-function randomShopItem(index, classId = 'swordsman') {
-  const rarities = ['common', 'rare', 'rare', 'epic'];
-  const rarity = rarities[index % rarities.length];
-  const mult = RARITY[rarity].mult;
-
-  if (index % 3 === 2) return teleportScroll();
-
-  if (index % 2 === 0) {
-    const weapon = classId === 'archer'
-      ? { name: 'Windrunner Bow', art: 'bow', stats: { attack: Math.round(5 * mult), speed: Math.round(4 * mult), crit: 0.01 * mult } }
-      : classId === 'mage'
-        ? { name: 'Starweave Staff', art: 'staff', stats: { attack: Math.round(6 * mult), mana: Math.round(10 * mult), manaRegen: Math.round(0.5 * mult * 10) / 10 } }
-        : { name: 'Runed Edge', art: 'sword', stats: { attack: Math.round(6 * mult), hp: Math.round(4 * mult), defense: Math.max(1, Math.round(mult)) } };
-    return makeItem(weapon.name, 'weapon', rarity, weapon.stats, {
-      classId, art: weapon.art, desc: `${CLASS_DATA[classId].name} weapon with role-specific attributes.`
-    });
-  }
-
-  const armor = classId === 'archer'
-    ? { name: 'Windwoven Vest', stats: { hp: Math.round(12 * mult), defense: Math.round(2 * mult), speed: Math.round(2 * mult) } }
-    : classId === 'mage'
-      ? { name: 'Aether Robe', stats: { hp: Math.round(10 * mult), defense: Math.max(1, Math.round(mult)), mana: Math.round(8 * mult), manaRegen: Math.round(0.4 * mult * 10) / 10 } }
-      : { name: 'Dragonhide', stats: { hp: Math.round(16 * mult), defense: Math.round(3 * mult) } };
-  return makeItem(
-    armor.name, 'armor', rarity, armor.stats,
-    { classId, art: 'armor', desc: `${CLASS_DATA[classId].name} armor with role-specific attributes.` }
-  );
-}
-
-function makeShopStock(classId = 'swordsman') {
-  return [
-    randomShopItem(0, classId),
-    randomShopItem(1, classId),
-    randomShopItem(2, classId),
-    roleItem('swordsman'),
-    roleItem('archer'),
-    roleItem('mage')
-  ];
-}
-
-function randomMobDropItem(classId = 'swordsman') {
-  if (Math.random() < 0.22) return roleItem(classId);
-  return randomShopItem(randInt(0, 5), classId);
 }
 
 function freshQuest() {
@@ -482,10 +104,11 @@ export function freshCharacter(username, classId = 'swordsman') {
     name: String(username || 'Hero').slice(0, 14),
     username: String(username || 'Hero').slice(0, 24),
     classId: safeClass,
+    title: 'Apprentice',
     level: 1,
     xp: 0,
     xpNext: 80,
-    gold: 30,
+    gold: 50,
     hp: base.maxHp,
     mp: base.mana,
     skillPoints: 0,
@@ -493,7 +116,14 @@ export function freshCharacter(username, classId = 'swordsman') {
     inventory: starter.inventory,
     equipment: starter.equipment,
     quest: freshQuest(),
+    achievements: normalizeAchievements(),
+    dailyQuests: normalizeDailyQuests(),
+    pet: freshPet('wolf'),
+    pvpWins: 0,
+    pvpLosses: 0,
+    pvpRating: 1000,
     bossDefeated: false,
+    bossKills: 0,
     zoneId: 'village',
     x: ZONE_SPAWN.village.x,
     y: ZONE_SPAWN.village.y,
@@ -505,8 +135,6 @@ export function freshCharacter(username, classId = 'swordsman') {
     savedAt: Date.now()
   };
 }
-
-// ---------- The World class ----------
 
 export class World {
   constructor(db) {
@@ -524,7 +152,11 @@ export class World {
     this.timer = null;
 
     // Public rooms always exist. Dungeons are created on demand.
-    for (const id of ['forest', 'cave', 'desert', 'village']) this.rooms.set(id, this.makePublicRoom(id));
+    this.leaderboards = new LeaderboardManager(this.db);
+    this.trades = new TradeManager(this);
+    for (const id of ['forest', 'cave', 'desert', 'village', 'frost_cave', 'volcano', 'swamp', 'arena']) {
+      this.rooms.set(id, this.makePublicRoom(id));
+    }
   }
 
   // ---------- Room setup ----------
@@ -707,6 +339,7 @@ export class World {
   }
 
   detach(client) {
+    if (this.trades) this.trades.handleDisconnect(client);
     // Remove from the room first so nobody sees a ghost player.
     if (client.roomId) {
       const room = this.rooms.get(client.roomId);
@@ -728,8 +361,16 @@ export class World {
     character.inventory = compactInventory((Array.isArray(character.inventory) ? character.inventory : [])
       .map(item => normalizeItem(item, classId)).filter(Boolean));
     character.equipment = character.equipment || {};
-    character.equipment.weapon = normalizeItem(character.equipment.weapon, classId);
-    character.equipment.armor = normalizeItem(character.equipment.armor, classId);
+    for (const slot of VALID_EQUIP_SLOTS) {
+      character.equipment[slot] = normalizeItem(character.equipment[slot], classId);
+    }
+    character.achievements = normalizeAchievements(character.achievements);
+    character.dailyQuests = normalizeDailyQuests(character.dailyQuests);
+    character.pet = normalizePet(character.pet || freshPet('wolf'));
+    character.pvpWins = Number(character.pvpWins) || 0;
+    character.pvpLosses = Number(character.pvpLosses) || 0;
+    character.pvpRating = Number(character.pvpRating) || 1000;
+    character.title = character.title || 'Apprentice';
     character.skillRanks = normalizeSkillRanks(character.skillRanks);
     character.shopStock = (Array.isArray(character.shopStock) ? character.shopStock : makeShopStock(classId))
       .map(item => normalizeItem(item, classId)).filter(Boolean);
@@ -832,32 +473,25 @@ export class World {
     const level = Math.max(1, Number(character.level) || 1);
     const lv = level - 1;
     const equipment = character.equipment || {};
-    const weaponStats = (equipment.weapon && itemCanEquip(equipment.weapon, classId) && equipment.weapon.stats) || {};
-    const armorStats = (equipment.armor && itemCanEquip(equipment.armor, classId) && equipment.armor.stats) || {};
-    const eq = key => Number(weaponStats[key] || 0) + Number(armorStats[key] || 0);
+    const eq = key => VALID_EQUIP_SLOTS.reduce((sum, slot) => {
+      const it = equipment[slot];
+      return sum + Number((it && itemCanEquip(it, classId) && it.stats && it.stats[key]) || 0);
+    }, 0);
+    const petAura = getPetAuraStats(character.pet);
     const talents = character.talents || {};
     const talent = id => clamp(Number(talents[id]) || 0, 0, 3);
     const spec = character.spec || null;
-
-    // Specialisations are simple, readable stat packages.
-    let specMods = { hp: 0, mp: 0, attack: 0, defense: 0, speed: 0, range: 0, crit: 0, cd: 1, taken: 1 };
-    if (spec === 'Guardian') specMods = { ...specMods, hp: 35, defense: 5, taken: 0.9 };
-    else if (spec === 'Berserker') specMods = { ...specMods, attack: 9, defense: -2 };
-    else if (spec === 'Ranger') specMods = { ...specMods, speed: 16, range: 35 };
-    else if (spec === 'Assassin') specMods = { ...specMods, attack: 6, crit: 0.08, cd: 0.9 };
-    else if (spec === 'Pyromancer') specMods = { ...specMods, attack: 8, mp: 20 };
-    else if (spec === 'Cryomancer') specMods = { ...specMods, mp: 40, hp: 12 };
-
-    const hpPerLevel = classId === 'swordsman' ? 14 : 9;
+    const specMods = SPEC_MODS[spec] || { hp: 0, mp: 0, attack: 0, defense: 0, speed: 0, range: 0, crit: 0, cd: 1, taken: 1 };
+    const hpPerLevel = base.hpGrowth || (classId === 'swordsman' ? 14 : 9);
     return {
-      maxHp: Math.round(base.maxHp + lv * hpPerLevel + eq('hp') + talent('vigor') * 12 + specMods.hp),
-      maxMp: Math.round(base.mana + lv * 5 + eq('mana') + talent('focus') * 5 + specMods.mp),
-      attack: round(base.attack + lv * 3 + eq('attack') + Math.round(base.attack * 0.04 * talent('power')) + specMods.attack, 2),
-      speed: clamp(base.speed + lv * 1.2 + eq('speed') + specMods.speed, 60, 210),
-      range: base.range + eq('range') + specMods.range,
-      defense: round(Math.max(0, base.defense + lv * 0.6 + eq('defense') + talent('guard') * 2 + specMods.defense), 2),
-      crit: round(0.10 + eq('crit') + talent('crit') * 0.03 + specMods.crit, 3),
-      manaRegen: round(base.manaRegen + level * 0.3 + eq('manaRegen') + talent('focus') * 0.5, 2),
+      maxHp: Math.round(base.maxHp + lv * hpPerLevel + eq('hp') + (petAura.hp || 0) + talent('vigor') * 12 + specMods.hp),
+      maxMp: Math.round(base.mana + lv * 5 + eq('mana') + (petAura.mana || 0) + talent('focus') * 5 + (specMods.mp || 0)),
+      attack: round(base.attack + lv * 3 + eq('attack') + (petAura.attack || 0) + Math.round(base.attack * 0.04 * talent('power')) + specMods.attack, 2),
+      speed: clamp(base.speed + lv * 1.2 + eq('speed') + (petAura.speed || 0) + specMods.speed, 60, 220),
+      range: base.range + eq('range') + (petAura.range || 0) + specMods.range,
+      defense: round(Math.max(0, base.defense + lv * 0.6 + eq('defense') + (petAura.defense || 0) + talent('guard') * 2 + specMods.defense), 2),
+      crit: round(0.10 + eq('crit') + (petAura.crit || 0) + talent('crit') * 0.03 + specMods.crit, 3),
+      manaRegen: round(base.manaRegen + level * 0.3 + eq('manaRegen') + (petAura.manaRegen || 0) + talent('focus') * 0.5 + (specMods.manaRegen || 0), 2),
       cooldownMult: round((1 - talent('haste') * 0.04) * specMods.cd, 3),
       damageTakenMult: round((1 - talent('guard') * 0.04) * specMods.taken, 3)
     };
@@ -915,16 +549,17 @@ export class World {
     const character = client.character;
     const stats = this.statsFor(client);
     const equipment = character.equipment || {};
-    const glow = Math.max(
-      Number(equipment.weapon && equipment.weapon.enchant) || 0,
-      Number(equipment.armor && equipment.armor.enchant) || 0
-    );
+    const glow = Math.max(...VALID_EQUIP_SLOTS.map(s => Number(equipment[s] && equipment[s].enchant) || 0));
 
     return {
       id: client.id,
       name: character.name,
       username: character.username || character.name,
       classId: character.classId,
+      title: character.title || 'Apprentice',
+      pet: character.pet || null,
+      pvpRating: character.pvpRating || 1000,
+      equipment: character.equipment,
       x: round(client.x, 1),
       y: round(client.y, 1),
       hp: Math.round(client.hp),
@@ -1914,6 +1549,16 @@ export class World {
       case 'guildJoin': this.handleGuildJoin(client, message); break;
       case 'guildInfo': this.emitGuildInfo(client); break;
       case 'guildLeave': this.handleGuildLeave(client); break;
+      case 'claim_achievement': this.handleClaimAchievement(client, message); break;
+      case 'claim_daily': this.handleClaimDaily(client, message); break;
+      case 'get_leaderboard': this.handleGetLeaderboard(client, message); break;
+      case 'trade_request': this.trades.requestTrade(client, message.targetName); break;
+      case 'trade_accept': this.trades.acceptTrade(client, message.fromId); break;
+      case 'trade_offer': this.trades.setOffer(client, message); break;
+      case 'trade_lock': this.trades.lockOffer(client); break;
+      case 'trade_confirm': this.trades.confirmTrade(client); break;
+      case 'trade_cancel': this.trades.cancelTrade(client); break;
+      case 'pet_select': this.handlePetSelect(client, message); break;
       default: this.error(client, `Unknown message type: ${type}`);
     }
   }
@@ -2018,14 +1663,25 @@ export class World {
     const startX = client.x + Math.cos(aim) * 14;
     const startY = client.y - 10 + Math.sin(aim) * 14;
 
-    if (classId === 'swordsman') {
-      // Melee cone: 1.2 radians (~69 degrees) each way.
+    // PvP Attack handling in Arena
+    if (room.zoneId === 'arena') {
+      for (const other of room.players) {
+        if (other.id === client.id || !other.character || !other.alive) continue;
+        const d = Math.hypot(other.x - client.x, other.y - client.y);
+        const angle = Math.atan2(other.y - client.y, other.x - client.x);
+        if (d < stats.range + 20 && angleDiff(angle, aim) < 1.2) {
+          this.damagePvPPlayer(room, other, damage, client, crit);
+        }
+      }
+    }
+
+    if (classId === 'swordsman' || classId === 'cleric' || classId === 'rogue') {
       for (const enemy of room.enemies.values()) {
         if (!enemy.alive) continue;
         const d = dist(client, enemy);
         const angle = Math.atan2(enemy.y - client.y, enemy.x - client.x);
         if (d < stats.range + enemy.radius && angleDiff(angle, aim) < 1.2) {
-          this.damageEnemy(room, enemy, damage, client, crit, 'slash');
+          this.damageEnemy(room, enemy, damage, client, crit, classId === 'cleric' ? 'holy' : 'slash');
         }
       }
       this.sfxRoom(room, 'swing');
@@ -2535,15 +2191,15 @@ export class World {
 
   handleEquip(client, message) {
     const slot = String(message.slot || '');
-    if (slot !== 'weapon' && slot !== 'armor') { this.error(client, 'Invalid equipment slot.'); return; }
+    if (!VALID_EQUIP_SLOTS.includes(slot)) { this.error(client, 'Invalid equipment slot.'); return; }
     const inventory = client.character.inventory || [];
     const index = inventory.findIndex(item => item && item.uid === message.uid);
     if (index < 0) { this.error(client, 'Item not found in your bag.'); return; }
 
     const item = normalizeItem(inventory[index], client.character.classId);
     if (!item || item.slot !== slot) { this.error(client, 'That item does not fit this slot.'); return; }
-    if (item.classId !== client.character.classId) {
-      this.error(client, `That item is for ${CLASS_DATA[item.classId]?.name || 'another class'} only.`);
+    if (!itemCanEquip(item, client.character.classId)) {
+      this.error(client, 'That item cannot be equipped by your class.');
       return;
     }
 
@@ -2560,7 +2216,7 @@ export class World {
 
   handleUnequip(client, message) {
     const slot = String(message.slot || '');
-    if (slot !== 'weapon' && slot !== 'armor') { this.error(client, 'Invalid equipment slot.'); return; }
+    if (!VALID_EQUIP_SLOTS.includes(slot)) { this.error(client, 'Invalid equipment slot.'); return; }
     const item = client.character.equipment[slot];
     if (!item) { this.error(client, 'That slot is empty.'); return; }
     if ((client.character.inventory || []).length >= 20) { this.error(client, 'Inventory is full.'); return; }
@@ -2783,7 +2439,7 @@ export class World {
     let location = 'inventory';
 
     if (!item) {
-      for (const slot of ['weapon', 'armor']) {
+      for (const slot of VALID_EQUIP_SLOTS) {
         if (equipment[slot] && equipment[slot].uid === uid) { item = equipment[slot]; location = slot; break; }
       }
     }
@@ -3032,7 +2688,84 @@ export class World {
       this.error(client, err.message);
     }
   }
+
+  damagePvPPlayer(room, target, rawDamage, attacker, crit = false) {
+    if (!target.character || !target.alive) return;
+    const stats = this.statsFor(target);
+    const reduction = stats.defense / (stats.defense + 40);
+    const damage = Math.max(1, Math.round(rawDamage * (1 - reduction) * stats.damageTakenMult));
+
+    target.hp = Math.max(0, target.hp - damage);
+    this.eventRoom(room, 'hit', {
+      x: round(target.x, 1),
+      y: round(target.y - 12, 1),
+      dmg: damage,
+      crit: !!crit,
+      hitKind: 'pvp',
+      attackKind: 'pvp'
+    });
+
+    if (target.hp <= 0) {
+      target.alive = false;
+      target.character.pvpLosses = (target.character.pvpLosses || 0) + 1;
+      target.character.pvpRating = Math.max(800, (target.character.pvpRating || 1000) - 15);
+
+      if (attacker && attacker.character) {
+        attacker.character.pvpWins = (attacker.character.pvpWins || 0) + 1;
+        attacker.character.pvpRating = (attacker.character.pvpRating || 1000) + 25;
+        attacker.character.gold += 50;
+        updateAchievementProgress(attacker.character, 'pvp_wins', 1, this, attacker);
+        updateDailyProgress(attacker.character, 'arena_win', 1, this, attacker);
+        this.systemRoom(room, `🏆 ${attacker.character.name} fells ${target.character.name} in the Arena! (+25 Rating)`, '#ffd75e');
+        this.sendCharacter(attacker);
+      }
+
+      // Quick respawn in arena
+      setTimeout(() => {
+        if (target.character) {
+          target.alive = true;
+          const stats = this.statsFor(target);
+          target.hp = stats.maxHp;
+          target.mp = stats.maxMp;
+          target.x = ZONE_SPAWN.arena.x;
+          target.y = ZONE_SPAWN.arena.y;
+          this.sendCharacter(target);
+          this.system(target, 'You have been revived in the arena.', '#7bed9f');
+        }
+      }, 1500);
+    }
+    this.sendCharacter(target);
+  }
+
+  handleClaimAchievement(client, message) {
+    const res = claimAchievementReward(client.character, message.id);
+    if (res.error) { this.error(client, res.error); return; }
+    this.system(client, `Claimed achievement reward: +${res.reward.gold || 0} Gold, +${res.reward.xp || 0} XP!`, '#50fa7b');
+    this.sendCharacter(client);
+    this.send(client, { type: 'achievements', achievements: client.character.achievements });
+  }
+
+  handleClaimDaily(client, message) {
+    const res = claimDailyReward(client.character, message.id);
+    if (res.error) { this.error(client, res.error); return; }
+    this.system(client, `Claimed daily bounty: +${res.reward.gold || 0} Gold, +${res.reward.xp || 0} XP!`, '#50fa7b');
+    this.sendCharacter(client);
+    this.send(client, { type: 'daily_quests', dailyQuests: client.character.dailyQuests });
+  }
+
+  handleGetLeaderboard(client, message) {
+    const category = message.category || 'level';
+    const entries = this.leaderboards.getLeaderboard(category, [...this.clients]);
+    this.send(client, { type: 'leaderboard', category, entries });
+  }
+
+  handlePetSelect(client, message) {
+    const type = message.petType || message.pet || message.kind || 'wolf';
+    if (!PET_TYPES[type]) { this.error(client, 'Unknown pet type.'); return; }
+    client.character.pet = freshPet(type, message.name);
+    this.system(client, `Bonded with ${client.character.pet.name} the ${PET_TYPES[type].name}!`, '#8be9fd');
+    this.syncVitals(client);
+    this.sendCharacter(client);
+  }
+
 }
-
-
-

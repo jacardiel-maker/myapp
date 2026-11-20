@@ -21,7 +21,18 @@ import { attachWebSocket } from './server/net.js';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT) || 3000;
 
-// Only these files are public. A whitelist is safer than serving the whole folder.
+const MIME_TYPES = new Map([
+  ['.html', 'text/html; charset=utf-8'],
+  ['.css', 'text/css; charset=utf-8'],
+  ['.js', 'text/javascript; charset=utf-8'],
+  ['.mjs', 'text/javascript; charset=utf-8'],
+  ['.json', 'application/json; charset=utf-8'],
+  ['.png', 'image/png'],
+  ['.jpg', 'image/jpeg'],
+  ['.svg', 'image/svg+xml'],
+  ['.ico', 'image/x-icon']
+]);
+
 const STATIC_FILES = new Map([
   ['/index.html', { file: path.join(HERE, 'index.html'), type: 'text/html; charset=utf-8' }],
   ['/style.css', { file: path.join(HERE, 'style.css'), type: 'text/css; charset=utf-8' }],
@@ -51,24 +62,42 @@ const server = http.createServer((req, res) => {
   }
 
   if (pathname === '/') pathname = '/index.html';
+  let targetFile = null;
+  let targetType = 'text/plain; charset=utf-8';
+
   const entry = STATIC_FILES.get(pathname);
-  if (!entry) {
+  if (entry) {
+    targetFile = entry.file;
+    targetType = entry.type;
+  } else {
+    // Check if the requested file exists in the safe root directory
+    const ext = path.extname(pathname).toLowerCase();
+    if (MIME_TYPES.has(ext)) {
+      const safePath = path.normalize(path.join(HERE, pathname));
+      if (safePath.startsWith(HERE)) {
+        targetFile = safePath;
+        targetType = MIME_TYPES.get(ext);
+      }
+    }
+  }
+
+  if (!targetFile) {
     res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Not found');
     return;
   }
 
-  fs.stat(entry.file, (err, stat) => {
+  fs.stat(targetFile, (err, stat) => {
     if (err || !stat.isFile()) {
       res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Not found');
       return;
     }
     res.writeHead(200, {
-      'Content-Type': entry.type,
+      'Content-Type': targetType,
       'Content-Length': stat.size,
       'Cache-Control': 'no-store'
     });
     if (req.method === 'HEAD') { res.end(); return; }
-    fs.createReadStream(entry.file).pipe(res);
+    fs.createReadStream(targetFile).pipe(res);
   });
 });
 

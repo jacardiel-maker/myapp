@@ -31,9 +31,17 @@
   const DAY_LENGTH = 120;   // Seconds for a full day/night cycle.
   const TAU = Math.PI * 2;
 
-  const TILE_ID = { GRASS: 0, WATER: 1, TREE: 2, SAND: 3, ROCK: 4, CAVE: 5, CACTUS: 6, PATH: 7, HOUSE_ROOF: 8, HOUSE_WALL: 9 };
+  const TILE_ID = {
+    GRASS: 0, WATER: 1, TREE: 2, SAND: 3, ROCK: 4, CAVE: 5, CACTUS: 6, PATH: 7,
+    HOUSE_ROOF: 8, HOUSE_WALL: 9, ICE: 10, SNOW: 11, LAVA: 12, ASH: 13,
+    SWAMP_WATER: 14, BOG: 15, ARENA_FLOOR: 16
+  };
+  const VALID_EQUIP_SLOTS = ['weapon', 'armor', 'helmet', 'boots', 'ring', 'necklace'];
   // Trees, water, cacti, cave walls and village buildings are real obstacles.
-  const BLOCKED_TILES = new Set([TILE_ID.WATER, TILE_ID.TREE, TILE_ID.ROCK, TILE_ID.CACTUS, TILE_ID.HOUSE_ROOF, TILE_ID.HOUSE_WALL]);
+  const BLOCKED_TILES = new Set([
+    TILE_ID.WATER, TILE_ID.TREE, TILE_ID.ROCK, TILE_ID.CACTUS,
+    TILE_ID.HOUSE_ROOF, TILE_ID.HOUSE_WALL, TILE_ID.LAVA, TILE_ID.SWAMP_WATER
+  ]);
   const PROJECTILE_BLOCKED_TILES = new Set(BLOCKED_TILES);
 
   const CLASS_DATA = {
@@ -51,6 +59,21 @@
       name: 'Mage', maxHp: 72, attack: 22, speed: 112, range: 190,
       mana: 125, manaRegen: 11, defense: 0, color: '#c99bff',
       blurb: 'Low HP. Fireballs, ice and teleport magic.'
+    },
+    cleric: {
+      name: 'Cleric', maxHp: 125, attack: 15, speed: 115, range: 120,
+      mana: 110, manaRegen: 11, defense: 3, color: '#ffd75e',
+      blurb: 'Holy champion. Sustains allies with party heals, smites, and sacred shields.'
+    },
+    rogue: {
+      name: 'Rogue', maxHp: 90, attack: 20, speed: 150, range: 60,
+      mana: 75, manaRegen: 8, defense: 1, color: '#52ffb8',
+      blurb: 'Lethal ambusher. Vanishes into shadows and deals devastating critical strikes.'
+    },
+    summoner: {
+      name: 'Summoner', maxHp: 80, attack: 17, speed: 110, range: 210,
+      mana: 140, manaRegen: 13, defense: 1, color: '#e08bff',
+      blurb: 'Master of the occult. Summons spiritual familiars to fight alongside them.'
     }
   };
 
@@ -101,6 +124,24 @@
       { name: 'Blink', cost: 18, cd: 6, desc: 'Teleport toward your cursor.' },
       { name: 'Meteor', cost: 40, cd: 12, desc: 'Call down a huge fire blast at your cursor.' },
       { name: 'Arcane Burst', cost: 32, cd: 9, desc: 'Detonate arcane energy in a targeted area.' }
+    ],
+    cleric: [
+      { name: 'Holy Smite', cost: 18, cd: 5, desc: 'Call down a pillar of holy light to strike the enemy.' },
+      { name: 'Divine Heal', cost: 28, cd: 7, desc: 'Heal yourself and all nearby party members.' },
+      { name: 'Aegis Ward', cost: 22, cd: 10, desc: 'Grant a barrier absorbing damage and granting defense.' },
+      { name: 'Radiant Nova', cost: 38, cd: 11, desc: 'Release an explosion of holy light that harms foes and heals allies.' }
+    ],
+    rogue: [
+      { name: 'Shadow Strike', cost: 16, cd: 4, desc: 'Lunge behind the target with a brutal stab.' },
+      { name: 'Smoke Bomb', cost: 20, cd: 9, desc: 'Drop smoke, becoming invisible and gaining +30% movement speed.' },
+      { name: 'Poison Dart', cost: 18, cd: 6, desc: 'Throw a toxic dart that continuously drains enemy life.' },
+      { name: 'Eviscerate', cost: 35, cd: 10, desc: 'Vicious execution dealing catastrophic damage to wounded foes.' }
+    ],
+    summoner: [
+      { name: 'Arcane Blast', cost: 15, cd: 4, desc: 'Hurl a bolt of condensed spiritual force.' },
+      { name: 'Summon Familiar', cost: 30, cd: 15, desc: 'Summon an ethereal familiar that fights alongside you.' },
+      { name: 'Spirit Ward', cost: 24, cd: 9, desc: 'Distribute 30% of incoming damage to your spirit energy.' },
+      { name: 'Soul Nova', cost: 42, cd: 12, desc: 'Sacrifice spirit power to erupt in a shockwave of necrotic force.' }
     ]
   };
 
@@ -248,7 +289,7 @@
   }
 
   function itemCanEquip(item, classId) {
-    if (!item || (item.slot !== 'weapon' && item.slot !== 'armor')) return false;
+    if (!item || !VALID_EQUIP_SLOTS.includes(item.slot)) return false;
     const requiredClass = item.slot === 'weapon' ? (weaponClassFor(item) || item.classId) : item.classId;
     return !requiredClass || requiredClass === classId;
   }
@@ -545,7 +586,10 @@
   const STARTER_SPRITE_COLORS = {
     swordsman: { weapon: '#d4e0ec', armor: '#7896c4' },
     archer: { weapon: '#9c6a3d', armor: '#5c9b66' },
-    mage: { weapon: '#b37b45', armor: '#8b63c8' }
+    mage: { weapon: '#b37b45', armor: '#8b63c8' },
+    cleric: { weapon: '#e0c96c', armor: '#c7b370' },
+    rogue: { weapon: '#4ca585', armor: '#425752' },
+    summoner: { weapon: '#956dc8', armor: '#6d488f' }
   };
 
   const rolePortraitCache = new Map();
@@ -824,7 +868,10 @@
   const CLASS_PALETTE = {
     swordsman: { skin: '#f0c39b', hair: '#4a3428', body: '#6f8fbf', trim: '#d7e5ff', legs: '#43506b', weapon: '#d7e4ef' },
     archer: { skin: '#f0c39b', hair: '#3b7a49', body: '#4f8e5b', trim: '#b8e8be', legs: '#3c5b45', weapon: '#8a5a32' },
-    mage: { skin: '#f0c39b', hair: '#7b52b5', body: '#6f4aa8', trim: '#d9b8ff', legs: '#49356e', weapon: '#9c6b40' }
+    mage: { skin: '#f0c39b', hair: '#7b52b5', body: '#6f4aa8', trim: '#d9b8ff', legs: '#49356e', weapon: '#9c6b40' },
+    cleric: { skin: '#f0c39b', hair: '#8b6f38', body: '#d4af37', trim: '#fff4cc', legs: '#4a3f2b', weapon: '#e0c96c' },
+    rogue: { skin: '#f0c39b', hair: '#1f2937', body: '#374151', trim: '#52ffb8', legs: '#111827', weapon: '#4ca585' },
+    summoner: { skin: '#f0c39b', hair: '#4c1d95', body: '#7c3aed', trim: '#ddd6fe', legs: '#312e81', weapon: '#956dc8' }
   };
 
   // STAGE 1 + STAGE 5: an 8-frame walk / run cycle and attack poses for every class.
@@ -3811,9 +3858,15 @@
       shadow(ctx, this.x, this.y, this.radius + 2, 6);
       drawBossWarning(ctx, this.slamX, this.slamY, this.slamWindup, game.time);
       const frame = this.type === 'boss' ? Math.floor(game.time * 4) % 4 : Math.floor(game.time * 6) % 4;
-      const sprite = this.type === 'slime' ? slimeSprite(frame)
-        : ['goblin', 'scout', 'brute'].includes(this.type) ? goblinSprite(frame) : bossSprite(frame);
-      const tint = this.type === 'scout' ? 'hue-rotate(145deg) saturate(1.5)' : this.type === 'brute' ? 'hue-rotate(235deg) saturate(1.5)' : '';
+      const sprite = this.type.includes('slime') ? slimeSprite(frame)
+        : this.type.includes('goblin') || this.type.includes('scout') || this.type.includes('brute') ? goblinSprite(frame) : bossSprite(frame);
+      let tint = '';
+      if (this.type.includes('frost')) tint = 'hue-rotate(180deg) saturate(1.8) brightness(1.2)';
+      else if (this.type.includes('fire') || this.type.includes('magma')) tint = 'hue-rotate(340deg) saturate(2.2) brightness(1.1)';
+      else if (this.type.includes('venom') || this.type.includes('swamp') || this.type.includes('bog')) tint = 'hue-rotate(80deg) saturate(2.0)';
+      else if (this.type === 'scout') tint = 'hue-rotate(145deg) saturate(1.5)';
+      else if (this.type === 'brute') tint = 'hue-rotate(235deg) saturate(1.5)';
+      if (this.isElite) tint += (tint ? ' ' : '') + 'drop-shadow(0 0 6px #ffd700)';
       if (tint) { ctx.save(); ctx.filter = tint; }
       drawSprite(ctx, sprite, this.x, this.y, this.type === 'boss' ? 5 : MONSTER_SPRITE_SCALE);
       if (tint) ctx.restore();
@@ -4351,6 +4404,10 @@
         case 'g': this.panel = 'guild'; if (this.network.online) this.network.send({ type: 'guildInfo' }); break;
         case 'r': this.panel = 'craft'; break;
         case 't': this.panel = 'talents'; break;
+        case 'y': this.panel = 'achievements'; this.audio.sfx('ui'); break;
+        case 'u': this.panel = 'daily'; this.audio.sfx('ui'); break;
+        case 'l': this.panel = 'leaderboardModal'; if (this.network.online) this.network.send({ type: 'get_leaderboard', category: 'level' }); this.audio.sfx('ui'); break;
+        case 'p': this.panel = 'pets'; this.audio.sfx('ui'); break;
         case 'h': this.startTutorial(); break;
         case 'f': this.interact(); break;
         case 'n': if (this.network.online) this.network.send({ type: 'dungeon' }); else this.log('Dungeons require online mode.', '#ffd75e'); break;
@@ -5013,11 +5070,19 @@
       const eq = char.equipment || {};
       p.equipment = {
         weapon: normalizeItem(eq.weapon, classId),
-        armor: normalizeItem(eq.armor, classId)
+        armor: normalizeItem(eq.armor, classId),
+        helmet: normalizeItem(eq.helmet, classId),
+        boots: normalizeItem(eq.boots, classId),
+        ring: normalizeItem(eq.ring, classId),
+        necklace: normalizeItem(eq.necklace, classId)
       };
-      const starter = starterItems(classId);
-      if (!p.equipment.weapon || p.equipment.weapon.slot !== 'weapon') p.equipment.weapon = starter.equipment.weapon;
-      if (!p.equipment.armor || p.equipment.armor.slot !== 'armor') p.equipment.armor = starter.equipment.armor;
+      p.title = char.title || 'Apprentice';
+      p.pvpRating = Number(char.pvpRating) || 1000;
+      p.pvpWins = Number(char.pvpWins) || 0;
+      p.pvpLosses = Number(char.pvpLosses) || 0;
+      p.pet = char.pet || null;
+      if (char.achievements) this.achievements = char.achievements;
+      if (char.dailyQuests) this.dailyQuests = char.dailyQuests;
       if (Array.isArray(char.skillCd)) p.skillCd = Array.from({ length: 4 }, (_, i) => Math.max(0, Number(char.skillCd[i]) || 0));
       p.recalculateStats(false);
       if (Number.isFinite(char.hp)) p.hp = clamp(char.hp, 0, p.maxHp);
@@ -5070,11 +5135,17 @@
       const h = Math.max(1, Number(init.h) || 72);
       const raw = Array.isArray(init.tiles) ? init.tiles : [];
       const tiles = new Uint8Array(w * h);
-      for (let i = 0; i < tiles.length; i++) tiles[i] = clamp(Number(raw[i]) || 0, 0, 9);
+      for (let i = 0; i < tiles.length; i++) tiles[i] = clamp(Number(raw[i]) || 0, 0, 16);
       const zone = {
         id: zoneId, w, h, tiles,
         pixelW: w * TILE, pixelH: h * TILE,
-        name: zoneId === 'dungeon' ? 'Raid Arena' : zoneId === 'village' ? 'Hearthvale Village' : zoneId[0].toUpperCase() + zoneId.slice(1)
+        name: zoneId === 'dungeon' ? 'Raid Arena' :
+              zoneId === 'village' ? 'Hearthvale Village' :
+              zoneId === 'frost_cave' ? 'Frost Cavern' :
+              zoneId === 'volcano' ? 'Inferno Crater' :
+              zoneId === 'swamp' ? 'Toxic Marsh' :
+              zoneId === 'arena' ? 'Colosseum PvP Arena' :
+              zoneId[0].toUpperCase() + zoneId.slice(1)
       };
       this.zoneId = zoneId;
       this.zone = zone;
@@ -5111,6 +5182,45 @@
           net.joined = false;
           this.applyCharacter(msg.character || msg.char, true);
           net.send({ type: 'join' });
+          break;
+        }
+        case 'achievement_unlocked': {
+          this.log(`★ Achievement Unlocked: ${msg.achievement.name}!`, '#ffd75e');
+          this.audio.sfx('level');
+          break;
+        }
+        case 'achievements': {
+          this.achievements = msg.achievements;
+          break;
+        }
+        case 'daily_quests': {
+          this.dailyQuests = msg.dailyQuests;
+          break;
+        }
+        case 'leaderboard': {
+          this.leaderboardData = msg;
+          break;
+        }
+        case 'trade_invite': {
+          this.promptTradeInvite(msg.fromId, msg.fromName);
+          break;
+        }
+        case 'trade_state': {
+          this.tradeState = msg;
+          this.panel = 'trade';
+          break;
+        }
+        case 'trade_closed': {
+          if (this.panel === 'trade') this.panel = null;
+          this.tradeState = null;
+          this.log(`Trade closed (${msg.reason}).`, '#ffd75e');
+          break;
+        }
+        case 'telegraph': {
+          if (!this.telegraphs) this.telegraphs = [];
+          this.telegraphs.push({
+            x: msg.x, y: msg.y, r: msg.radius, duration: msg.duration, time: msg.duration, color: msg.color
+          });
           break;
         }
         case 'character':
@@ -6181,7 +6291,7 @@
       if (this.network.online) {
         if (item.slot === 'consumable') this.network.send({ type: 'usePotion', uid: item.uid });
         else if (source.type === 'equip') this.network.send({ type: 'unequip', slot: source.slot });
-        else if (source.type === 'inv' && (item.slot === 'weapon' || item.slot === 'armor')) {
+        else if (source.type === 'inv' && VALID_EQUIP_SLOTS.includes(item.slot)) {
           this.network.send({ type: 'equip', uid: item.uid, slot: item.slot });
         }
         return;
@@ -6262,6 +6372,27 @@
     }
 
     handleAction(action) {
+      if (action.startsWith('claimAch:')) {
+        const id = action.slice(9);
+        if (this.network.online) this.network.send({ type: 'claim_achievement', id });
+        return;
+      }
+      if (action.startsWith('claimDaily:')) {
+        const id = action.slice(11);
+        if (this.network.online) this.network.send({ type: 'claim_daily', id });
+        return;
+      }
+      if (action.startsWith('setLeadTab:')) {
+        this.leaderboardTab = action.slice(11);
+        if (this.network.online) this.network.send({ type: 'get_leaderboard', category: this.leaderboardTab });
+        return;
+      }
+      if (action.startsWith('selectPet:')) {
+        const type = action.slice(10);
+        if (this.network.online) this.network.send({ type: 'pet_select', petType: type });
+        else if (this.player) this.player.pet = { type, name: type, level: 1 };
+        return;
+      }
       if (action.startsWith('select:')) {
         this.selectedClass = action.split(':')[1];
         this.nameFocused = false;
@@ -6376,6 +6507,13 @@
           break;
         case 'openInventory': this.panel = 'inventory'; break;
         case 'openSkills': this.panel = 'skills'; break;
+        case 'openAchievements': this.panel = 'achievements'; break;
+        case 'openDaily': this.panel = 'daily'; break;
+        case 'openLeaderboardModal': this.panel = 'leaderboardModal'; if (this.network.online) this.network.send({ type: 'get_leaderboard', category: 'level' }); break;
+        case 'openPets': this.panel = 'pets'; break;
+        case 'tradeLock': if (this.network.online) this.network.send({ type: 'trade_lock' }); break;
+        case 'tradeConfirm': if (this.network.online) this.network.send({ type: 'trade_confirm' }); break;
+        case 'tradeCancel': if (this.network.online) this.network.send({ type: 'trade_cancel' }); this.panel = null; break;
         case 'openAuction': this.panel = 'auction'; if (this.network.online) this.network.send({ type: 'auctionList' }); break;
         case 'openMail': this.panel = 'mail'; if (this.network.online) this.network.send({ type: 'mailList' }); break;
         case 'openGuild': this.panel = 'guild'; if (this.network.online) this.network.send({ type: 'guildInfo' }); break;
@@ -6384,7 +6522,7 @@
         case 'openQuest': this.panel = 'quest'; break;
         case 'equipSelectedItem': {
           const item = this.player && this.player.inventory.find(it => it.uid === this.selectedItemUid);
-          if (!item || (item.slot !== 'weapon' && item.slot !== 'armor')) {
+          if (!item || !VALID_EQUIP_SLOTS.includes(item.slot)) {
             this.log('Select a weapon or armor in your bag first.', '#ffcf70');
             break;
           }
@@ -6660,6 +6798,11 @@
       else if (this.panel === 'guild') this.drawGuildPanel();
       else if (this.panel === 'craft') this.drawCraftPanel();
       else if (this.panel === 'talents') this.drawTalentsPanel();
+      else if (this.panel === 'achievements') this.drawAchievementsPanel();
+      else if (this.panel === 'daily') this.drawDailyPanel();
+      else if (this.panel === 'leaderboardModal') this.drawLeaderboardModalPanel();
+      else if (this.panel === 'trade') this.drawTradePanel();
+      else if (this.panel === 'pets') this.drawPetsPanel();
 
       if (this.paused) this.drawPauseMenu();
       if (this.input.mobile && !this.paused && !this.panel) {
@@ -6678,6 +6821,27 @@
       this.shakeY = shakeY;
       ctx.save();
       ctx.translate(-this.camX + shakeX, -this.camY + shakeY);
+
+      // Render boss & elite attack telegraph indicators
+      if (this.telegraphs && this.telegraphs.length > 0) {
+        for (let i = this.telegraphs.length - 1; i >= 0; i--) {
+          const t = this.telegraphs[i];
+          t.time -= this.dt || 0.05;
+          if (t.time <= 0) { this.telegraphs.splice(i, 1); continue; }
+          const progress = 1 - (t.time / t.duration);
+          ctx.save();
+          ctx.strokeStyle = t.color || '#ff3838';
+          ctx.lineWidth = 2.5;
+          ctx.beginPath();
+          ctx.arc(t.x, t.y, t.r, 0, TAU);
+          ctx.stroke();
+          ctx.fillStyle = (t.color || '#ff3838') + '33';
+          ctx.beginPath();
+          ctx.arc(t.x, t.y, t.r * progress, 0, TAU);
+          ctx.fill();
+          ctx.restore();
+        }
+      }
 
       const sx = Math.max(0, Math.floor(this.camX / TILE));
       const sy = Math.max(0, Math.floor(this.camY / TILE));
@@ -7598,12 +7762,14 @@
 
       this.button(20, 18, 150, 26, 'BACK TO STORY', 'backToIntro', { color: '#34405c', border: '#9fb0cd', fontSize: 9 });
 
-      const ids = ['swordsman', 'archer', 'mage'];
+      const ids = ['swordsman', 'archer', 'mage', 'cleric', 'rogue', 'summoner'];
       ids.forEach((id, i) => {
-        const x = 62 + i * 295;
-        const y = 104;
+        const row = Math.floor(i / 3);
+        const col = i % 3;
+        const x = 62 + col * 295;
+        const y = 98 + row * 168;
         const w = 275;
-        const h = 326;
+        const h = 158;
         const data = CLASS_DATA[id];
         const selected = this.selectedClass === id;
         ctx.fillStyle = selected ? 'rgba(40,62,100,0.96)' : 'rgba(14,20,36,0.92)';
@@ -7612,8 +7778,8 @@
         ctx.lineWidth = selected ? 3 : 1;
         ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
 
-        const portraitX = x + 82;
-        const portraitY = y + 26;
+        const portraitX = x + 12;
+        const portraitY = y + 24;
         const aura = ctx.createRadialGradient(x + w / 2, portraitY + 53, 5, x + w / 2, portraitY + 53, 58);
         aura.addColorStop(0, `${data.color}55`);
         aura.addColorStop(1, '#0b1020');
@@ -7736,14 +7902,30 @@
         this.dropRegions.push({ x: cx, y: cy, w: size, h: size, item, source });
       };
 
-      // Equipment slots. Their sprite colors change what the hero wears.
-      ctx.font = 'bold 11px monospace';
+      // 6 Equipment slots in 2 columns of 3
+      ctx.font = 'bold 10px monospace';
       ctx.fillStyle = '#dbe6ff';
       ctx.textAlign = 'left';
-      ctx.fillText('Weapon', x + 24, y + 58);
-      drawItemCell(x + 20, y + 66, 82, p.equipment.weapon, { type: 'equip', slot: 'weapon' });
-      ctx.fillText('Armor', x + 24, y + 174);
-      drawItemCell(x + 20, y + 182, 82, p.equipment.armor, { type: 'equip', slot: 'armor' });
+
+      // Left column: Weapon, Helmet, Ring
+      ctx.fillText('Weapon', x + 20, y + 54);
+      drawItemCell(x + 20, y + 58, 48, p.equipment.weapon, { type: 'equip', slot: 'weapon' });
+
+      ctx.fillText('Helmet', x + 20, y + 120);
+      drawItemCell(x + 20, y + 124, 48, p.equipment.helmet, { type: 'equip', slot: 'helmet' });
+
+      ctx.fillText('Ring', x + 20, y + 186);
+      drawItemCell(x + 20, y + 190, 48, p.equipment.ring, { type: 'equip', slot: 'ring' });
+
+      // Right column: Armor, Boots, Necklace
+      ctx.fillText('Armor', x + 74, y + 54);
+      drawItemCell(x + 74, y + 58, 48, p.equipment.armor, { type: 'equip', slot: 'armor' });
+
+      ctx.fillText('Boots', x + 74, y + 120);
+      drawItemCell(x + 74, y + 124, 48, p.equipment.boots, { type: 'equip', slot: 'boots' });
+
+      ctx.fillText('Necklace', x + 74, y + 186);
+      drawItemCell(x + 74, y + 190, 48, p.equipment.necklace, { type: 'equip', slot: 'necklace' });
 
       ctx.font = '10px monospace';
       ctx.fillStyle = '#9fb0cd';
@@ -7752,9 +7934,10 @@
         `DEF  ${p.finalStats.defense.toFixed(1)}`,
         `HP   ${p.maxHp}`,
         `SPD  ${Math.round(p.finalStats.speed)}`,
+        `CRIT ${((p.finalStats.crit || 0.1) * 100).toFixed(0)}%`,
         `Gold ${p.gold}`
       ];
-      lines.forEach((line, i) => ctx.fillText(line, x + 22, y + 300 + i * 16));
+      lines.forEach((line, i) => ctx.fillText(line, x + 20, y + 254 + i * 14));
 
       // 5x4 bag grid.
       const gx = x + 132;

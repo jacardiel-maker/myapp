@@ -7,9 +7,12 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "check": "node --check server.js && node --check server/net.js && node --check server/db.js && node --check server/world.js"
+    "check": "node --check server.js && node --check server/net.js && node --check server/db.js && node --check server/world.js && node --check server/items.js && node --check server/classes.js && node --check server/zones.js && node --check server/combat.js && node --check server/achievements.js && node --check server/daily.js && node --check server/leaderboards.js && node --check server/trade.js && node --check server/pets.js"
   },
   "engines": {
     "node": ">=22"
+  },
+  "dependencies": {
+    "playwright": "^1.65.1"
   }
 }
