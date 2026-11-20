@@ -883,6 +883,8 @@ export class World {
         y: round(p.y, 1),
         amount: p.amount,
         item: p.item || null,
+        ownerIds: p.kind === 'chest' ? p.ownerIds : undefined,
+        openedBy: p.kind === 'chest' ? p.openedBy : undefined,
         age: round(p.age, 2)
       })),
       portals: room.portals.map(p => ({ ...p }))
@@ -1069,7 +1071,7 @@ export class World {
     // The pet is drawn by the client, but it "vacuums" loot by collecting
     // anything within a small radius of the player.
     for (const pickup of [...room.pickups.values()]) {
-      if (!pickup.collected && dist(client, pickup) < 34) this.collectPickup(client, pickup);
+      if (pickup.kind !== 'chest' && !pickup.collected && dist(client, pickup) < 34) this.collectPickup(client, pickup);
     }
 
     // Keep the save blob's vitals current without sending a character packet.
@@ -1398,6 +1400,7 @@ export class World {
     const guildGoals = this.db.guildRecordBossKill(recipients.map(client => client.accountId));
     const effects = ['flame', 'frost', 'void', 'thunder'];
     const effect = pick(effects);
+    const chestRewards = {};
 
     for (const client of recipients) {
       const rarity = Math.random() < 0.5 ? 'epic' : 'rare';
@@ -1417,12 +1420,19 @@ export class World {
       }
       client.character.bossDefeated = true;
       this.gainXp(client, 400, false);
-      if (this.addItem(client, loot)) {
-        this.event(client, 'loot', { name: loot.name, rarity: loot.rarity });
-      } else {
-        client.character.gold += 100;
-      }
+      chestRewards[String(client.id)] = loot;
       this.sendCharacter(client);
+    }
+
+    if (recipients.length) {
+      this.spawnPickup(room, 'chest', boss.x, boss.y, 1, null, null, {
+        ownerIds: recipients.map(client => client.id),
+        openedBy: [],
+        rewards: chestRewards
+      });
+      for (const client of recipients) {
+        this.event(client, 'system', { text: 'A boss reward chest appeared nearby. Walk up and press F to open it.', color: '#ffd75e' });
+      }
     }
 
     for (const goal of guildGoals) {
@@ -1430,7 +1440,7 @@ export class World {
       if (representative) this.broadcastGuildInfo(this.db.guildInfoForAccount(representative).members);
     }
 
-    this.eventRoom(room, 'system', { text: 'The Cave Boss has fallen! Party rewards granted.', color: '#ffd75e' });
+    this.eventRoom(room, 'system', { text: 'The Cave Boss has fallen! Party reward chests appeared nearby.', color: '#ffd75e' });
     this.sfxRoom(room, 'boss');
   }
 
@@ -1593,7 +1603,7 @@ export class World {
 
   // ---------- Pickups ----------
 
-  spawnPickup(room, kind, x, y, amount = 1, item = null, material = null) {
+  spawnPickup(room, kind, x, y, amount = 1, item = null, material = null, extra = {}) {
     const pickup = {
       id: this.nextPickupId++,
       kind,
@@ -1603,7 +1613,8 @@ export class World {
       item,
       material,
       age: 0,
-      collected: false
+      collected: false,
+      ...(kind === 'chest' ? extra : {})
     };
     room.pickups.set(pickup.id, pickup);
     return pickup;
@@ -1714,6 +1725,7 @@ export class World {
       case 'attack': this.handleAttack(client, message); break;
       case 'skill': this.handleSkill(client, message); break;
       case 'interact': this.handleInteract(client); break;
+      case 'openChest': this.handleOpenChest(client, message); break;
       case 'dungeon': this.handleDungeon(client); break;
       case 'leaveDungeon': this.handleLeaveDungeon(client); break;
       case 'emote': this.handleEmote(client); break;
@@ -1819,7 +1831,22 @@ export class World {
     if (!client.alive || client.attackCd > 0) return;
     const room = this.rooms.get(client.roomId);
     if (!room) return;
-    this.applyLockAim(client, message);
+    let target = this.applyLockAim(client, message);
+    if (!target) {
+      let nearestDistance = 500;
+      for (const enemy of room.enemies.values()) {
+        if (!enemy.alive) continue;
+        const distance = dist(client, enemy);
+        if (distance <= nearestDistance) {
+          target = enemy;
+          nearestDistance = distance;
+        }
+      }
+      if (target) {
+        client.lockTargetId = target.id;
+        this.applyLockAim(client, { lockTargetId: target.id });
+      }
+    }
 
     const classId = client.character.classId;
     client.attackCd = classId === 'archer' ? 0.31 : classId === 'mage' ? 0.55 : 0.45;
@@ -2027,6 +2054,42 @@ export class World {
   }
 
   // ---------- Interaction and rooms ----------
+
+  handleOpenChest(client, message = {}) {
+    const room = this.rooms.get(client.roomId);
+    const chest = room && room.pickups.get(Number(message.id));
+    if (!chest || chest.kind !== 'chest' || chest.collected) {
+      this.error(client, 'That boss chest is no longer available.');
+      return;
+    }
+    if (!chest.ownerIds?.some(id => String(id) === String(client.id))) {
+      this.error(client, 'This chest is reserved for the boss party.');
+      return;
+    }
+    if (chest.openedBy?.some(id => String(id) === String(client.id))) {
+      this.error(client, 'You already opened your share of this chest.');
+      return;
+    }
+    if (dist(client, chest) >= 76) {
+      this.error(client, 'Move closer to the boss chest.');
+      return;
+    }
+
+    const reward = chest.rewards && chest.rewards[String(client.id)];
+    if (reward && this.addItem(client, reward)) {
+      this.event(client, 'loot', { name: reward.name, rarity: reward.rarity });
+      this.event(client, 'system', { text: `Boss chest opened: ${reward.name}!`, color: RARITY[reward.rarity]?.color || '#ffd75e' });
+    } else {
+      client.character.gold += 100;
+      this.event(client, 'system', { text: 'Your bag is full. The chest reward became 100 gold.', color: '#ffd75e' });
+    }
+    chest.openedBy = Array.isArray(chest.openedBy) ? chest.openedBy : [];
+    chest.openedBy.push(client.id);
+    chest.age = 0;
+    if (chest.openedBy.length >= chest.ownerIds.length) room.pickups.delete(chest.id);
+    this.sfx(client, 'pickup');
+    this.sendCharacter(client);
+  }
 
   handleInteract(client) {
     const room = this.rooms.get(client.roomId);

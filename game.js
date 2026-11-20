@@ -1053,10 +1053,10 @@
       this.y = y;
       this.amount = amount;
       this.item = item;
-      this.vx = rand(-45, 45);
-      this.vy = rand(-70, -30);
+      this.vx = kind === 'chest' ? 0 : rand(-45, 45);
+      this.vy = kind === 'chest' ? 0 : rand(-70, -30);
       // Loot pops up, then rests here instead of falling through the map.
-      this.groundY = y + 8;
+      this.groundY = kind === 'chest' ? y : y + 8;
       this.age = 0;
       this.collected = false;
       this.petPull = false;
@@ -1065,6 +1065,7 @@
     }
     update(dt, game) {
       this.age += dt;
+      if (this.kind === 'chest') return;
       this.x += this.vx * dt;
       this.y += this.vy * dt;
       this.vy += 160 * dt;
@@ -1102,12 +1103,37 @@
       }
       if (game.player && dist(this, game.player) < 26) game.collectPickup(this);
     }
-    draw(ctx) {
+    draw(ctx, game = null) {
       const bob = Math.sin(this.age * 5) * 2;
       const x = Math.round(this.x);
       const y = Math.round(this.y + bob);
       ctx.save();
-      if (this.kind === 'gold') {
+      if (this.kind === 'chest') {
+        const playerId = game && game.network ? game.network.playerId : null;
+        const opened = Array.isArray(this.openedBy) && this.openedBy.some(id => String(id) === String(playerId));
+        const pulse = 0.75 + (Math.sin(this.age * 4) + 1) * 0.12;
+        ctx.globalAlpha = opened ? 0.62 : 1;
+        ctx.fillStyle = `rgba(255, 199, 75, ${pulse * (opened ? 0.12 : 0.24)})`;
+        ctx.beginPath();
+        ctx.ellipse(x, y + 2, 23, 13, 0, 0, TAU);
+        ctx.fill();
+        ctx.fillStyle = '#71451f';
+        ctx.fillRect(x - 15, y - 7, 30, 15);
+        ctx.fillStyle = '#bd7931';
+        ctx.fillRect(x - 13, y - 5, 26, 11);
+        ctx.fillStyle = '#8c531f';
+        ctx.fillRect(x - 16, y - 12, 32, 7);
+        ctx.fillStyle = '#e8b64c';
+        ctx.fillRect(x - 14, y - 11, 28, 4);
+        ctx.fillRect(x - 13, y + 1, 26, 2);
+        ctx.fillRect(x - 2, y - 9, 4, 9);
+        ctx.fillStyle = '#fff0a6';
+        ctx.fillRect(x - 1, y - 6, 2, 4);
+        ctx.font = 'bold 8px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#ffe59a';
+        ctx.fillText(opened ? 'OPENED' : 'BOSS CHEST', x, y - 17);
+      } else if (this.kind === 'gold') {
         ctx.fillStyle = '#8a5f16';
         ctx.fillRect(x - 4, y - 4, 8, 8);
         ctx.fillStyle = '#ffd75e';
@@ -1416,6 +1442,7 @@
 
     attack(game) {
       if (this.attackCd > 0) return;
+      game.acquireAutoLockTarget();
       this.aim = game.getAimAngle(this);
       this.attackCd = this.classId === 'archer' ? 0.31 : this.classId === 'mage' ? 0.55 : 0.45;
       this.attackAnim = 0.35;
@@ -2443,9 +2470,9 @@
       this.y = lerp(this.y, this.ty, k);
       this.age = (this.age || 0) + dt;
     }
-    draw(ctx) {
+    draw(ctx, game) {
       this.age = this.age || 0;
-      Pickup.prototype.draw.call(this, ctx);
+      Pickup.prototype.draw.call(this, ctx, game);
     }
   }
 
@@ -2582,6 +2609,21 @@
       this.pointerDownUI = false;
       this.pointer = { x: 0, y: 0, down: false, inside: false, type: 'mouse', id: null, lastMove: 0 };
       this.joystick = { active: false, id: null, originX: 100, originY: VIEW_H - 100, x: 0, y: 0 };
+      this.nativeTextInput = document.createElement('input');
+      this.nativeTextInput.type = 'text';
+      this.nativeTextInput.autocomplete = 'off';
+      this.nativeTextInput.autocapitalize = 'off';
+      this.nativeTextInput.spellcheck = false;
+      this.nativeTextInput.setAttribute('aria-label', 'Game text input');
+      Object.assign(this.nativeTextInput.style, {
+        position: 'fixed', display: 'none', zIndex: '20', boxSizing: 'border-box',
+        padding: '0', margin: '0', border: '0', outline: '0', background: 'transparent',
+        color: 'transparent', caretColor: 'transparent', WebkitTextFillColor: 'transparent',
+        opacity: '0.01', pointerEvents: 'none', fontSize: '16px', lineHeight: '1',
+        userSelect: 'text', WebkitUserSelect: 'text'
+      });
+      document.body.appendChild(this.nativeTextInput);
+      this.nativeTextInput.addEventListener('input', () => this.onNativeTextInput());
       this.input = {
         keys: {},
         joystick: this.joystick,
@@ -2634,6 +2676,65 @@
       }
     }
 
+    nativeTextInputConfig() {
+      if (this.state === 'select' && this.nameFocused) {
+        return { key: 'name', x: 278, y: 452, w: 220, h: 34, value: this.nameInput, maxLength: 14, type: 'text' };
+      }
+      if (this.state === 'login') {
+        const username = this.loginFields.active === 'username';
+        return {
+          key: username ? 'username' : 'password',
+          x: 344, y: username ? 214 : 276, w: 272, h: 32,
+          value: username ? this.loginFields.username : this.loginFields.password,
+          maxLength: 24, type: username ? 'text' : 'password'
+        };
+      }
+      return null;
+    }
+
+    syncNativeTextInputOverlay(focus = false) {
+      const input = this.nativeTextInput;
+      const config = this.nativeTextInputConfig();
+      if (!input || !config) {
+        if (input) {
+          input.style.display = 'none';
+          if (document.activeElement === input) input.blur();
+        }
+        return;
+      }
+
+      const rect = this.canvas.getBoundingClientRect();
+      const sx = rect.width / VIEW_W;
+      const sy = rect.height / VIEW_H;
+      input.style.display = 'block';
+      input.style.left = `${rect.left + (config.x + 6) * sx}px`;
+      input.style.top = `${rect.top + 3 * sy + config.y * sy}px`;
+      input.style.width = `${Math.max(24, (config.w - 12) * sx)}px`;
+      input.style.height = `${Math.max(20, (config.h - 6) * sy)}px`;
+      input.type = config.type;
+      input.maxLength = config.maxLength;
+      input.inputMode = 'text';
+      input.enterKeyHint = config.key === 'username' ? 'next' : 'go';
+      input.autocomplete = config.key === 'password' ? 'current-password' : 'off';
+      if (document.activeElement !== input || focus) input.value = config.value || '';
+      if (focus) {
+        input.focus({ preventScroll: true });
+        try { input.setSelectionRange(input.value.length, input.value.length); } catch (_) {}
+      }
+    }
+
+    onNativeTextInput() {
+      const input = this.nativeTextInput;
+      const config = this.nativeTextInputConfig();
+      if (!config) return;
+      let value = input.value.slice(0, config.maxLength);
+      if (config.key === 'name') value = value.replace(/[^a-z0-9 _-]/gi, '');
+      else if (config.key === 'username') value = value.replace(/[^a-z0-9_-]/gi, '');
+      if (input.value !== value) input.value = value;
+      if (config.key === 'name') this.nameInput = value;
+      else this.loginFields[config.key] = value;
+    }
+
     bindEvents() {
       window.addEventListener('keydown', e => this.onKeyDown(e));
       window.addEventListener('keyup', e => this.onKeyUp(e));
@@ -2646,6 +2747,8 @@
       window.addEventListener('pointermove', e => this.onPointerMove(e));
       window.addEventListener('pointerup', e => this.onPointerUp(e));
       window.addEventListener('pointercancel', e => this.onPointerUp(e));
+      window.addEventListener('resize', () => this.syncNativeTextInputOverlay());
+      if (window.visualViewport) window.visualViewport.addEventListener('resize', () => this.syncNativeTextInputOverlay());
       this.canvas.addEventListener('pointerleave', () => { this.pointer.inside = false; });
       this.canvas.addEventListener('contextmenu', e => e.preventDefault());
     }
@@ -2681,6 +2784,28 @@
 
     onKeyDown(e) {
       const k = e.key.toLowerCase();
+      if (document.activeElement === this.nativeTextInput) {
+        if (k === 'enter') {
+          e.preventDefault();
+          if (this.state === 'select') this.startNewGame();
+          else if (this.state === 'login' && this.loginFields.active === 'username') {
+            this.loginFields.active = 'password';
+            this.textField = 'loginPass';
+            this.syncNativeTextInputOverlay(true);
+          } else if (this.state === 'login') this.networkLogin('login');
+        } else if (k === 'tab' && this.state === 'login') {
+          e.preventDefault();
+          this.loginFields.active = this.loginFields.active === 'username' ? 'password' : 'username';
+          this.textField = this.loginFields.active === 'username' ? 'loginUser' : 'loginPass';
+          this.syncNativeTextInputOverlay(true);
+        } else if (k === 'escape') {
+          e.preventDefault();
+          if (this.state === 'login') this.state = 'select';
+          else this.nameFocused = false;
+          this.nativeTextInput.blur();
+        }
+        return;
+      }
       const isMovement = k === 'w' || k === 'a' || k === 's' || k === 'd' ||
         k === 'arrowup' || k === 'arrowdown' || k === 'arrowleft' || k === 'arrowright' || k === ' ';
       const gameplay = this.state === 'playing' && !this.paused && !this.panel && !this.chatOpen && !this.textField;
@@ -2771,7 +2896,10 @@
 
       switch (k) {
         case ' ':
-          if (this.network.online) this.network.send({ type: 'attack', lockTargetId: this.lockedTargetId });
+          if (this.network.online) {
+            this.acquireAutoLockTarget();
+            this.network.send({ type: 'attack', lockTargetId: this.lockedTargetId });
+          }
           else this.player && this.player.attack(this);
           break;
         case '1': case '2': case '3': {
@@ -2812,22 +2940,47 @@
 
     onPointerDown(e) {
       const p = this.pointerPos(e);
+      if (e.pointerType === 'touch') this.input.mobile = true;
+      this.audio.unlock();
+
+      const region = this.findClickRegion(p.x, p.y);
+      if (region) {
+        this.pointer.x = p.x;
+        this.pointer.y = p.y;
+        this.pointer.down = true;
+        this.pointer.inside = true;
+        this.pointer.id = e.pointerId;
+        this.pointer.type = e.pointerType || 'mouse';
+        this.pointerDownUI = true;
+        this.audio.sfx('ui');
+        this.handleAction(region.action);
+        return;
+      }
+
+      // The movement stick stays anchored in the lower-left corner. Its touch
+      // pointer is kept separate so moving the stick cannot move a skill reticle.
+      if (this.input.mobile && this.state === 'playing' && !this.paused && !this.panel &&
+          !this.chatOpen && !this.textField &&
+          Math.hypot(p.x - this.joystick.originX, p.y - this.joystick.originY) <= 72) {
+        this.joystick.active = true;
+        this.joystick.id = e.pointerId;
+        let dx = p.x - this.joystick.originX;
+        let dy = p.y - this.joystick.originY;
+        const length = Math.hypot(dx, dy);
+        const max = 46;
+        if (length > max) { dx = dx / length * max; dy = dy / length * max; }
+        this.joystick.x = dx / max;
+        this.joystick.y = dy / max;
+        this.pointerDownUI = true;
+        return;
+      }
+
       this.pointer.x = p.x;
       this.pointer.y = p.y;
       this.pointer.down = true;
       this.pointer.inside = true;
       this.pointer.id = e.pointerId;
       this.pointer.type = e.pointerType || 'mouse';
-      if (e.pointerType === 'touch') this.input.mobile = true;
-      this.audio.unlock();
-
-      const region = this.findClickRegion(p.x, p.y);
-      if (region) {
-        this.pointerDownUI = true;
-        this.audio.sfx('ui');
-        this.handleAction(region.action);
-        return;
-      }
 
       if (this.pendingSkillIndex !== null && this.state === 'playing' && !this.paused && !this.panel && !this.chatOpen) {
         this.pointer.lastMove = this.time;
@@ -2840,6 +2993,7 @@
       if (this.panel === 'inventory') {
         const src = this.findDropRegion(p.x, p.y);
         if (src && src.item) {
+          if (src.source.type === 'inv') this.selectedItemUid = src.item.uid;
           const key = src.source.type + ':' + (src.source.index !== undefined ? src.source.index : src.source.slot);
           const now = performance.now();
           if (this.lastClick.key === key && now - this.lastClick.time < 320) {
@@ -2854,23 +3008,11 @@
         }
       }
 
-      // STAGE 5: left-lower screen is the virtual joystick.
-      if (this.input.mobile && this.state === 'playing' && !this.paused && !this.panel &&
-          !this.chatOpen && !this.textField &&
-          p.x < VIEW_W * 0.45 && p.y > VIEW_H * 0.55) {
-        this.joystick.active = true;
-        this.joystick.id = e.pointerId;
-        this.joystick.originX = p.x;
-        this.joystick.originY = p.y;
-        this.joystick.x = this.joystick.y = 0;
-        this.pointerDownUI = true;
-        return;
-      }
-
       // Mouse click on the world = basic attack.
       if (this.state === 'playing' && !this.paused && !this.panel && !this.chatOpen &&
           !(p.x < 370 && p.y > VIEW_H - 140)) {
         if (this.player) {
+          this.acquireAutoLockTarget();
           this.player.aim = this.getAimAngle(this.player);
           if (this.network.online) this.network.send({ type: 'attack', aim: this.player.aim, lockTargetId: this.lockedTargetId });
           else this.player.attack(this);
@@ -2880,11 +3022,6 @@
 
     onPointerMove(e) {
       const p = this.pointerPos(e);
-      this.pointer.x = p.x;
-      this.pointer.y = p.y;
-      this.pointer.inside = true;
-      this.pointer.lastMove = this.time;
-      if (this.pendingSkillIndex !== null) this.pendingAimFromPointer = true;
       if (this.joystick.active && e.pointerId === this.joystick.id) {
         let dx = p.x - this.joystick.originX;
         let dy = p.y - this.joystick.originY;
@@ -2893,7 +3030,13 @@
         if (len > max) { dx = dx / len * max; dy = dy / len * max; }
         this.joystick.x = dx / max;
         this.joystick.y = dy / max;
+        return;
       }
+      this.pointer.x = p.x;
+      this.pointer.y = p.y;
+      this.pointer.inside = true;
+      this.pointer.lastMove = this.time;
+      if (this.pendingSkillIndex !== null) this.pendingAimFromPointer = true;
     }
 
     onPointerUp(e) {
@@ -2901,6 +3044,8 @@
         this.joystick.active = false;
         this.joystick.id = null;
         this.joystick.x = this.joystick.y = 0;
+        this.pointerDownUI = false;
+        return;
       }
       if (this.drag) {
         const p = { x: this.pointer.x, y: this.pointer.y };
@@ -3095,6 +3240,24 @@
       if (this.lockedTargetId === null || this.lockedTargetId === undefined) return null;
       const target = this.enemies.find(e => e && String(e.id) === String(this.lockedTargetId));
       return target && target.alive !== false ? target : null;
+    }
+
+    acquireAutoLockTarget(maxDistance = 500) {
+      const current = this.currentLockTarget();
+      if (current) return current;
+      this.lockedTargetId = null;
+      if (!this.player) return null;
+      let nearest = null;
+      let nearestDistance = maxDistance;
+      for (const enemy of this.targetableEnemies()) {
+        const distance = dist(this.player, enemy);
+        if (distance <= nearestDistance) {
+          nearest = enemy;
+          nearestDistance = distance;
+        }
+      }
+      this.lockedTargetId = nearest ? nearest.id : null;
+      return nearest;
     }
 
     // Lock-on overrides aiming for attacks and skills, but selection still uses
@@ -3856,6 +4019,12 @@
         equipment: this.player.equipment,
         quest: this.quest,
         bossDefeated: this.bossDefeated,
+        bossChest: this.pickups.find(pickup => pickup.kind === 'chest' && !pickup.collected)
+          ? (() => {
+            const chest = this.pickups.find(pickup => pickup.kind === 'chest' && !pickup.collected);
+            return { x: chest.x, y: chest.y, item: chest.item };
+          })()
+          : null,
         zoneId: this.zoneId,
         x: this.player.x,
         y: this.player.y,
@@ -3915,6 +4084,10 @@
         player.y = fallback.y;
       }
       this.resetZoneActors();
+      if (this.zoneId === 'cave' && this.bossDefeated && data.bossChest && data.bossChest.item) {
+        this.pickups.push(new Pickup('chest', Number(data.bossChest.x) || player.x, Number(data.bossChest.y) || player.y,
+          1, normalizeItem(data.bossChest.item)));
+      }
       this.clearInput();
       this.state = 'playing';
       this.paused = false;
@@ -4072,9 +4245,18 @@
       }
       if (enemy.type === 'boss') {
         this.bossDefeated = true;
+        const rarity = Math.random() < 0.5 ? 'epic' : 'rare';
+        const item = makeItem(
+          rarity === 'epic' ? 'Cave Sovereign Relic' : 'Boss-Slayer Charm',
+          Math.random() < 0.6 ? 'weapon' : 'armor',
+          rarity,
+          rarity === 'epic' ? { attack: 14, hp: 30, defense: 6 } : { attack: 9, hp: 18, defense: 3 },
+          { effect: pick(['flame', 'frost', 'void', 'thunder']), desc: 'Forged in the heart of the dungeon.' }
+        );
+        this.pickups.push(new Pickup('chest', enemy.x, enemy.y, 1, item));
         this.audio.sfx('boss');
         this.shake = Math.max(this.shake, 16);
-        this.log('The Cave Boss has fallen! Huge rewards!', '#ffd75e');
+        this.log('The Cave Boss has fallen! A reward chest appeared nearby.', '#ffd75e');
         this.save();
       }
       if (source === this.player) this.playerInCombat = 3;
@@ -4142,6 +4324,11 @@
       if (!this.player) return null;
       let best = null;
       let bestD = 68;
+      for (const chest of this.pickups) {
+        if (!chest || chest.kind !== 'chest' || chest.collected || !this.canOpenBossChest(chest)) continue;
+        const d = dist(this.player, chest);
+        if (d < bestD) { best = { kind: 'chest', obj: chest }; bestD = d; }
+      }
       for (const n of this.npcs) {
         const d = dist(this.player, n);
         if (d < bestD) { best = { kind: 'npc', obj: n }; bestD = d; }
@@ -4153,10 +4340,40 @@
       return best;
     }
 
+    canOpenBossChest(chest) {
+      const playerId = this.network.playerId;
+      if (Array.isArray(chest.ownerIds) && chest.ownerIds.length &&
+          !chest.ownerIds.some(id => String(id) === String(playerId))) return false;
+      return !Array.isArray(chest.openedBy) ||
+        !chest.openedBy.some(id => String(id) === String(playerId));
+    }
+
+    openBossChest(chest) {
+      if (!chest || chest.kind !== 'chest' || !this.canOpenBossChest(chest)) return;
+      if (this.network.online) {
+        this.network.send({ type: 'openChest', id: chest.id });
+        return;
+      }
+      if (dist(this.player, chest) >= 76) return;
+      chest.collected = true;
+      const item = chest.item;
+      if (item && this.player.addItem(item)) {
+        this.addFloater(this.player.x, this.player.y - 46, `Found ${item.name}`, RARITY[item.rarity].color, 11);
+        this.log(`Boss chest: ${item.name}!`, RARITY[item.rarity].color);
+      } else {
+        this.player.gold += 100;
+        this.addFloater(this.player.x, this.player.y - 46, 'Chest: +100 gold', '#ffd75e', 11);
+      }
+      this.audio.sfx('pickup');
+      this.save();
+    }
+
     interact() {
       const found = this.findInteractable();
       if (!found) return;
-      if (found.kind === 'portal') {
+      if (found.kind === 'chest') {
+        this.openBossChest(found.obj);
+      } else if (found.kind === 'portal') {
         if (this.network.online) this.network.send({ type: 'interact' });
         else this.travelTo(found.obj);
       } else if (found.obj.type === 'shop') {
@@ -4304,6 +4521,9 @@
       if (this.network.online) {
         if (item.slot === 'consumable') this.network.send({ type: 'usePotion', uid: item.uid });
         else if (source.type === 'equip') this.network.send({ type: 'unequip', slot: source.slot });
+        else if (source.type === 'inv' && (item.slot === 'weapon' || item.slot === 'armor')) {
+          this.network.send({ type: 'equip', uid: item.uid, slot: item.slot });
+        }
         return;
       }
       if (item.slot === 'consumable') {
@@ -4315,6 +4535,8 @@
           p.recalculateStats();
           this.save();
         }
+      } else if (source.type === 'inv' && (item.slot === 'weapon' || item.slot === 'armor')) {
+        this.dropItem({ item, from: source }, { type: 'equip', slot: item.slot });
       }
     }
 
@@ -4379,6 +4601,7 @@
         this.clearInput();
         if (this.textField === 'loginUser') this.loginFields.active = 'username';
         if (this.textField === 'loginPass') this.loginFields.active = 'password';
+        if (this.state === 'login') this.syncNativeTextInputOverlay(true);
         return;
       }
       if (action.startsWith('selectItem:')) {
@@ -4408,15 +4631,27 @@
       switch (action) {
         case 'start': this.startNewGame(); break;
         case 'continue': this.loadGame(); break;
-        case 'focusName': this.nameFocused = true; break;
+        case 'focusName':
+          this.nameFocused = true;
+          this.syncNativeTextInputOverlay(true);
+          break;
         case 'openLogin': this.openLogin(); break;
         case 'loginBack': this.state = 'select'; break;
-        case 'loginUser': this.loginFields.active = 'username'; break;
-        case 'loginPass': this.loginFields.active = 'password'; break;
+        case 'loginUser':
+          this.loginFields.active = 'username';
+          this.syncNativeTextInputOverlay(true);
+          break;
+        case 'loginPass':
+          this.loginFields.active = 'password';
+          this.syncNativeTextInputOverlay(true);
+          break;
         case 'login': this.networkLogin('login'); break;
         case 'register': this.networkLogin('register'); break;
         case 'attack':
-          if (this.network.online) this.network.send({ type: 'attack', lockTargetId: this.lockedTargetId });
+          if (this.network.online) {
+            this.acquireAutoLockTarget();
+            this.network.send({ type: 'attack', lockTargetId: this.lockedTargetId });
+          }
           else this.player && this.player.attack(this);
           break;
         case 'lockTarget': this.toggleLockTarget(); break;
@@ -4446,6 +4681,16 @@
         case 'openCraft': this.panel = 'craft'; break;
         case 'openTalents': this.panel = 'talents'; break;
         case 'openQuest': this.panel = 'quest'; break;
+        case 'equipSelectedItem': {
+          const item = this.player && this.player.inventory.find(it => it.uid === this.selectedItemUid);
+          if (!item || (item.slot !== 'weapon' && item.slot !== 'armor')) {
+            this.log('Select a weapon or armor in your bag first.', '#ffcf70');
+            break;
+          }
+          this.quickUseItem(item, { type: 'inv' });
+          this.selectedItemUid = null;
+          break;
+        }
         case 'closePanel': this.panel = null; break;
         case 'enterDungeon': if (this.network.online) this.network.send({ type: 'dungeon' }); break;
         case 'leaveDungeon': if (this.network.online) this.network.send({ type: 'leaveDungeon' }); break;
@@ -4615,6 +4860,7 @@
 
     render() {
       const ctx = this.ctx;
+      this.syncNativeTextInputOverlay();
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, VIEW_W, VIEW_H);
       this.clickRegions = [];
@@ -4706,7 +4952,7 @@
       }
 
       // Loot on the ground.
-      for (const p of this.pickups) if (!p.collected) p.draw(ctx);
+      for (const p of this.pickups) if (!p.collected) p.draw(ctx, this);
 
       // Merge all actors and sort by Y so ones lower on screen draw in front.
       const actors = [];
@@ -5092,7 +5338,8 @@
       const found = this.findInteractable();
       if (!found || this.panel || this.paused) return;
       let label = '';
-      if (found.kind === 'portal') label = `[F] Enter ${found.obj.label}`;
+      if (found.kind === 'chest') label = '[F] Open Boss Chest';
+      else if (found.kind === 'portal') label = `[F] Enter ${found.obj.label}`;
       else if (found.obj.type === 'shop') label = '[F] Open Shop';
       else label = this.quest.complete ? '[F] Turn in Quest' : '[F] Talk / Quest';
       const ctx = this.ctx;
@@ -5312,7 +5559,9 @@
         ctx.fillRect(cx, cy, size, size);
         const color = item ? RARITY[item.rarity].color : '#3b455d';
         ctx.strokeStyle = color;
-        ctx.lineWidth = item ? 2 : 1;
+        const selected = item && source.type === 'inv' && item.uid === this.selectedItemUid;
+        ctx.strokeStyle = selected ? '#ffd75e' : color;
+        ctx.lineWidth = selected ? 3 : item ? 2 : 1;
         ctx.strokeRect(cx + 0.5, cy + 0.5, size - 1, size - 1);
         if (item) {
           ctx.fillStyle = color;
@@ -5371,9 +5620,16 @@
       ctx.fillStyle = '#9fb0cd';
       wrappedText(ctx, 'Double-click an item to equip it or drink a potion. Drag items to rearrange. Equipment changes your stats and sprite colors.', ix, y + 150, 170, 15, 8);
 
-      this.button(x + 452, y + 300, 160, 30, 'SKILLS (K)', 'openSkills', { color: '#4a3f7a' });
-      this.button(x + 452, y + 338, 160, 30, 'USE POTION (Q)', 'potion', { color: '#6b3542' });
-      this.button(x + 452, y + 382, 160, 30, 'CLOSE', 'closePanel', { color: '#34405c' });
+      const selectedItem = p.inventory.find(item => item.uid === this.selectedItemUid);
+      const canEquipSelected = selectedItem && (selectedItem.slot === 'weapon' || selectedItem.slot === 'armor');
+      this.button(x + 452, y + 278, 160, 30, canEquipSelected ? `EQUIP ${selectedItem.slot.toUpperCase()}` : 'SELECT GEAR TO EQUIP', 'equipSelectedItem', {
+        color: canEquipSelected ? '#3f7d55' : '#34405c',
+        border: canEquipSelected ? '#8ee6a8' : '#59647a',
+        fontSize: 10
+      });
+      this.button(x + 452, y + 314, 160, 30, 'SKILLS (K)', 'openSkills', { color: '#4a3f7a' });
+      this.button(x + 452, y + 350, 160, 30, 'USE POTION (Q)', 'potion', { color: '#6b3542' });
+      this.button(x + 452, y + 386, 160, 30, 'CLOSE', 'closePanel', { color: '#34405c' });
     }
 
     drawSkillsPanel() {
@@ -5889,8 +6145,8 @@
     drawMobileControls() {
       const ctx = this.ctx;
       const joy = this.joystick;
-      const ox = joy.active ? joy.originX : joy.originX;
-      const oy = joy.active ? joy.originY : joy.originY;
+      const ox = joy.originX;
+      const oy = joy.originY;
       ctx.save();
       ctx.globalAlpha = 0.65;
       ctx.strokeStyle = '#dbe6ff';
