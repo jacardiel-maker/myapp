@@ -138,6 +138,7 @@
     ctx.lineWidth = 1;
     ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
     if (label) {
+      ctx.save();
       ctx.font = 'bold 10px monospace';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
@@ -146,8 +147,27 @@
       ctx.shadowBlur = 2;
       ctx.fillText(label, x + w / 2, y + h / 2 + 0.5);
       ctx.shadowBlur = 0;
-      ctx.textBaseline = 'alphabetic';
+      ctx.restore();
     }
+  }
+
+  function drawBossWarning(ctx, x, y, remaining, time) {
+    if (!(remaining > 0) || !Number.isFinite(x) || !Number.isFinite(y)) return;
+    const pulse = 1 + Math.sin(time * 22) * 0.035;
+    ctx.save();
+    ctx.globalAlpha = 0.78;
+    ctx.fillStyle = 'rgba(255,70,70,0.16)';
+    ctx.strokeStyle = '#ff6b4a';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(x, y, 88 * pulse, 0, TAU);
+    ctx.fill();
+    ctx.stroke();
+    ctx.font = 'bold 11px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#ffe0bd';
+    ctx.fillText('DODGE!', x, y - 96);
+    ctx.restore();
   }
 
   function panel(ctx, x, y, w, h, title) {
@@ -1118,6 +1138,12 @@
         ctx.fillRect(x - 1, y - 6, 2, 8);
         ctx.fillRect(x - 4, y - 4, 4, 2);
         ctx.fillRect(x + 1, y - 2, 4, 2);
+      } else if (this.kind === 'ore') {
+        ctx.fillStyle = '#51667c';
+        ctx.fillRect(x - 5, y - 4, 10, 8);
+        ctx.fillStyle = '#9ce7ff';
+        ctx.fillRect(x - 3, y - 3, 3, 3);
+        ctx.fillRect(x + 1, y - 1, 3, 3);
       } else if (this.kind === 'potion') {
         ctx.fillStyle = '#e6e9f2';
         ctx.fillRect(x - 2, y - 6, 4, 2);
@@ -1166,7 +1192,7 @@
       }
       this.trailTimer -= dt;
       if (this.trailTimer <= 0) {
-        const col = this.kind === 'fireball' ? '#ff8c42' : this.kind === 'poison' ? '#78e06a' : '#9fd8ff';
+        const col = this.kind === 'fireball' ? '#ff8c42' : this.kind === 'poison' ? '#78e06a' : this.kind === 'scoutBolt' ? '#ffbf69' : '#9fd8ff';
         game.effects.push(new Effect('particle', this.x, this.y, { color: col, life: 0.22, size: 3 }));
         this.trailTimer = 0.04;
       }
@@ -1220,6 +1246,11 @@
         ctx.fillRect(-3, -3, 6, 6);
         ctx.fillStyle = '#fff3c4';
         ctx.fillRect(-1, -1, 3, 3);
+      } else if (this.kind === 'scoutBolt') {
+        ctx.fillStyle = '#ff9d4d';
+        ctx.fillRect(-5, -3, 10, 6);
+        ctx.fillStyle = '#ffe2a8';
+        ctx.fillRect(1, -2, 4, 4);
       } else if (this.kind === 'bossOrb') {
         ctx.fillStyle = '#ff4fa3';
         ctx.fillRect(-6, -6, 12, 12);
@@ -1750,7 +1781,11 @@
         ? { hp: 46, damage: 8, speed: 44, range: 20, xp: 12, gold: 6, radius: 13, aggro: 240 }
         : type === 'goblin'
           ? { hp: 78, damage: 13, speed: 58, range: 24, xp: 22, gold: 11, radius: 13, aggro: 290 }
-          : { hp: 920, damage: 26, speed: 50, range: 34, xp: 400, gold: 320, radius: 20, aggro: 760 };
+          : type === 'brute'
+            ? { hp: 180, damage: 24, speed: 34, range: 30, xp: 34, gold: 18, radius: 16, aggro: 320 }
+            : type === 'scout'
+              ? { hp: 62, damage: 10, speed: 56, range: 190, xp: 26, gold: 14, radius: 12, aggro: 340 }
+              : { hp: 920, damage: 26, speed: 50, range: 34, xp: 400, gold: 320, radius: 20, aggro: 760 };
       this.maxHp = Math.round(base.hp * (type === 'boss' ? 1 : zoneMul));
       this.hp = this.maxHp;
       this.damage = base.damage * (type === 'boss' ? 1 : zoneMul);
@@ -1765,6 +1800,9 @@
       this.attackCd = rand(0, 0.8);
       this.abilityTimer = 4;
       this.phase = 1;
+      this.slamWindup = 0;
+      this.slamX = null;
+      this.slamY = null;
       this.flash = 0;
       this.slowTimer = 0;
       this.slowFactor = 1;
@@ -1815,12 +1853,14 @@
       }
       if (!this.target) {
         this.aggro = false;
+        if (this.type === 'boss' && this.slamWindup > 0) this.updateBoss(dt, game, 0);
         return;
       }
       this.aggro = true;
       const d = dist(this, this.target);
       const angle = angleTo(this, this.target);
-      if (d > this.range + this.target.radius - 4) {
+      const retreating = this.type === 'scout' && d < this.range * 0.62;
+      if (d > this.range + this.target.radius - 4 || retreating) {
         // If something is in the way, follow a tile path around it instead of pushing into it.
         let moveAngle = angle;
         if (!game.lineClear(this, this.target)) {
@@ -1835,11 +1875,19 @@
         }
         const slow = this.slowTimer > 0 ? this.slowFactor : 1;
         if (this.slowTimer > 0) this.slowTimer -= dt;
-        game.tryMove(this, Math.cos(moveAngle) * this.speed * slow * dt, Math.sin(moveAngle) * this.speed * slow * dt);
+        const moveSign = retreating ? -1 : 1;
+        game.tryMove(this, Math.cos(moveAngle) * this.speed * slow * dt * moveSign, Math.sin(moveAngle) * this.speed * slow * dt * moveSign);
         this.walkTimer += dt;
         this.walkFrame = Math.floor(this.walkTimer * 6) % 4;
       }
-      if (d < this.range + this.target.radius + 4 && this.attackCd <= 0) {
+      if (this.type === 'scout' && d <= this.range && this.attackCd <= 0) {
+        this.attackCd = 1.65;
+        game.spawnProjectile({
+          x: this.x + Math.cos(angle) * 12, y: this.y + Math.sin(angle) * 12,
+          vx: Math.cos(angle) * 225, vy: Math.sin(angle) * 225,
+          damage: this.damage, team: 'enemy', owner: this, kind: 'scoutBolt', radius: 5, life: 2.4
+        });
+      } else if (this.type !== 'scout' && d < this.range + this.target.radius + 4 && this.attackCd <= 0) {
         this.attackCd = this.type === 'boss' ? 1.1 : 0.9;
         game.damageTarget(this.target, this.damage, this, this.type);
         game.effects.push(new Effect('slash', this.x, this.y - 12, { color: '#ffb0a0', angle: angle, radius: 18, life: 0.18 }));
@@ -1848,11 +1896,26 @@
     }
 
     updateBoss(dt, game, angle) {
+      if (this.slamWindup > 0) {
+        this.slamWindup = Math.max(0, this.slamWindup - dt);
+        if (this.slamWindup === 0) {
+          for (const hero of game.combatTargets()) {
+            if (dist(hero, { x: this.slamX, y: this.slamY }) <= 88) game.damageTarget(hero, 24, this, 'slam');
+          }
+          game.effects.push(new Effect('ring', this.slamX, this.slamY, { color: '#ff6b4a', radius: 10, endRadius: 88, life: 0.35 }));
+          game.shake = Math.max(game.shake, 9);
+          this.slamX = null;
+          this.slamY = null;
+          this.abilityTimer = 2.2;
+        }
+        return;
+      }
       const ratio = this.hp / this.maxHp;
       const newPhase = ratio < 0.28 ? 3 : ratio < 0.6 ? 2 : 1;
       if (newPhase !== this.phase) {
         this.phase = newPhase;
         this.abilityTimer = 1.2;
+        this.slamWindup = 0;
         game.log(`Boss enters phase ${this.phase}!`, '#ff8c42');
         game.audio.sfx('boss');
         game.shake = Math.max(game.shake, 8);
@@ -1873,12 +1936,10 @@
         this.abilityTimer = this.phase >= 3 ? 2.6 : 3.4;
       }
       if (this.phase >= 3 && this.target && dist(this, this.target) < 150) {
-        // A boss slam hurts heroes, not other monsters.
-        for (const hero of game.combatTargets()) {
-          if (dist(hero, this.target) < 76) game.damageTarget(hero, 24, this, 'slam');
-        }
-        game.effects.push(new Effect('ring', this.target.x, this.target.y, { color: '#ff6b4a', radius: 10, endRadius: 76, life: 0.35 }));
-        game.shake = Math.max(game.shake, 9);
+        this.slamX = this.target.x;
+        this.slamY = this.target.y;
+        this.slamWindup = 0.75;
+        game.log('The boss is charging a slam! Move out of the glowing circle!', '#ff8c42');
         this.abilityTimer = Math.min(this.abilityTimer, 2.2);
       }
     }
@@ -1887,19 +1948,23 @@
       if (!this.alive && this.deathTimer <= 0) return;
       const alpha = this.alive ? 1 : clamp(this.deathTimer / 0.5, 0, 1);
       shadow(ctx, this.x, this.y, this.radius + 2, 6, 0.25 * alpha);
+      drawBossWarning(ctx, this.slamX, this.slamY, this.slamWindup, game.time);
       let sprite;
       if (this.type === 'slime') sprite = slimeSprite(this.walkFrame);
-      else if (this.type === 'goblin') sprite = goblinSprite(this.walkFrame);
+      else if (['goblin', 'scout', 'brute'].includes(this.type)) sprite = goblinSprite(this.walkFrame);
       else sprite = bossSprite(Math.floor(game.time * 4) % 4);
       const scale = this.type === 'boss' ? 3 : SPRITE_SCALE;
+      const tint = this.type === 'scout' ? 'hue-rotate(145deg) saturate(1.5)' : this.type === 'brute' ? 'hue-rotate(235deg) saturate(1.5)' : '';
       if (this.flash > 0) {
         ctx.save();
         ctx.globalAlpha = alpha;
-        ctx.filter = 'brightness(3)';
+        ctx.filter = `${tint} brightness(3)`;
         drawSprite(ctx, sprite, this.x, this.y, scale, 1);
         ctx.restore();
       } else {
+        if (tint) { ctx.save(); ctx.filter = tint; }
         drawSprite(ctx, sprite, this.x, this.y, scale, alpha);
+        if (tint) ctx.restore();
       }
       if (this.poisonTimer > 0) {
         ctx.fillStyle = '#7be06a';
@@ -2137,8 +2202,8 @@
   const BOSS_POS = { x: 1560, y: 1120 };
   const ZONE_ENEMY_COUNTS = {
     forest: { slime: 15, goblin: 6 },
-    cave: { slime: 6, goblin: 11 },
-    desert: { slime: 8, goblin: 13 },
+    cave: { slime: 6, goblin: 7, brute: 4 },
+    desert: { slime: 8, goblin: 9, scout: 4 },
     dungeon: { goblin: 6 }
   };
   const ZONE_MUL = { forest: 1, cave: 1.7, desert: 2.4, dungeon: 2.6 };
@@ -2158,13 +2223,39 @@
     const base = id === 'cave' || isArena ? TILE_ID.CAVE
       : id === 'forest' ? TILE_ID.GRASS : TILE_ID.SAND;
 
-    // Clean, open maps: no trees, water, cacti or internal rocks to fight around.
-    // Only cave/dungeon maps keep a two-tile border as the map boundary.
+    // Start with open terrain and a cave/dungeon border. Decorative patches follow.
     for (let y = 0; y < h; y++) {
       for (let x = 0; x < w; x++) {
         const border = (isArena || id === 'cave') &&
           (x < 2 || y < 2 || x >= w - 2 || y >= h - 2);
         tiles[y * w + x] = border ? TILE_ID.ROCK : base;
+      }
+    }
+    // Add small, decorative landmarks. These tiles remain walkable; they give
+    // each region a stronger identity without creating combat choke points.
+    if (id === 'forest' || id === 'desert') {
+      const rng = mulberry32(id === 'forest' ? 4101 : 4103);
+      const safePoints = [ZONE_SPAWN[id], ...PORTAL_DEFS[id].flatMap(p => [p, p.arrive]),
+        ...(id === 'forest' ? NPC_DEFS : [])];
+      for (let y = 5; y < h - 5; y++) {
+        for (let x = 5; x < w - 5; x++) {
+          if (rng() > 0.018) continue;
+          const px = x * TILE + TILE / 2;
+          const py = y * TILE + TILE / 2;
+          if (safePoints.some(p => Math.hypot(p.x - px, p.y - py) < 230)) continue;
+          const radius = rng() < 0.28 ? 2 : 1;
+          for (let oy = -radius; oy <= radius; oy++) {
+            for (let ox = -radius; ox <= radius; ox++) {
+              if (Math.abs(ox) + Math.abs(oy) > radius + 1) continue;
+              const tx = x + ox;
+              const ty = y + oy;
+              if (tx < 2 || ty < 2 || tx >= w - 2 || ty >= h - 2) continue;
+              tiles[ty * w + tx] = id === 'forest'
+                ? (rng() < 0.72 ? TILE_ID.TREE : TILE_ID.WATER)
+                : TILE_ID.CACTUS;
+            }
+          }
+        }
       }
     }
     return {
@@ -2215,7 +2306,7 @@
   }
 
   function freshQuest() {
-    return { active: false, kills: 0, herbs: 0, complete: false, claimed: false };
+    return { stage: 1, active: false, kills: 0, herbs: 0, goblins: 0, ore: 0, complete: false, claimed: false };
   }
 
   // ============================================================
@@ -2298,10 +2389,14 @@
     draw(ctx, game) {
       if (!this.alive) return;
       shadow(ctx, this.x, this.y, this.radius + 2, 6);
+      drawBossWarning(ctx, this.slamX, this.slamY, this.slamWindup, game.time);
       const frame = this.type === 'boss' ? Math.floor(game.time * 4) % 4 : Math.floor(game.time * 6) % 4;
       const sprite = this.type === 'slime' ? slimeSprite(frame)
-        : this.type === 'goblin' ? goblinSprite(frame) : bossSprite(frame);
+        : ['goblin', 'scout', 'brute'].includes(this.type) ? goblinSprite(frame) : bossSprite(frame);
+      const tint = this.type === 'scout' ? 'hue-rotate(145deg) saturate(1.5)' : this.type === 'brute' ? 'hue-rotate(235deg) saturate(1.5)' : '';
+      if (tint) { ctx.save(); ctx.filter = tint; }
       drawSprite(ctx, sprite, this.x, this.y, this.type === 'boss' ? 3 : SPRITE_SCALE);
+      if (tint) ctx.restore();
       if (this.type !== 'boss' && this.hp < this.maxHp) drawBar(ctx, this.x - 16, this.y - 38, 32, 4, this.hp / this.maxHp, '#ff6b6b');
     }
   }
@@ -2443,6 +2538,7 @@
       this.autoSaveTimer = 0;
       this.enemySpawnTimer = 0;
       this.lockedTargetId = null; // Mob lock-on target (works offline and online).
+      this.pendingSkillIndex = null;
       this.mobileMenuOpen = false; // Touch-friendly feature drawer.
 
       this.zones = {
@@ -2571,6 +2667,8 @@
     clearInput() {
       const keys = this.input.keys;
       for (const k of Object.keys(keys)) keys[k] = false;
+      this.pendingSkillIndex = null;
+      this.pendingAimFromPointer = false;
       this.joystick.active = false;
       this.joystick.id = null;
       this.joystick.x = this.joystick.y = 0;
@@ -2589,7 +2687,7 @@
       // Only real movement/attack keys are tracked. Shortcut keys (B, N, I...)
       // and keys typed into canvas text fields are never stored as movement.
       this.input.keys[k] = isMovement && gameplay && !this.isTyping();
-      if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' ', 'tab'].includes(k)) e.preventDefault();
+      if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' ', 'tab'].includes(k) || (k === 'p' && (e.shiftKey || e.altKey))) e.preventDefault();
 
       // STAGE 5: the name field on the title screen is typed on the canvas.
       if (this.state === 'select') {
@@ -2665,6 +2763,12 @@
         return;
       }
 
+      if (this.pendingSkillIndex !== null && k === 'escape') {
+        this.pendingSkillIndex = null;
+        this.audio.sfx('ui');
+        return;
+      }
+
       switch (k) {
         case ' ':
           if (this.network.online) this.network.send({ type: 'attack', lockTargetId: this.lockedTargetId });
@@ -2672,8 +2776,7 @@
           break;
         case '1': case '2': case '3': {
           const idx = Number(k) - 1;
-          if (this.network.online) this.network.send({ type: 'skill', index: idx, lockTargetId: this.lockedTargetId });
-          else this.player && this.player.useSkill(idx, this);
+          this.activateSkill(idx);
           break;
         }
         case 'i': this.panel = 'inventory'; this.audio.sfx('ui'); break;
@@ -2686,7 +2789,11 @@
         case 'f': this.interact(); break;
         case 'n': if (this.network.online) this.network.send({ type: 'dungeon' }); else this.log('Dungeons require online mode.', '#ffd75e'); break;
         case 'e': this.emote(); break;
-        case 'p': this.inviteParty(); break;
+        case 'p':
+          if (e.altKey) this.disbandParty();
+          else if (e.shiftKey) this.leaveParty();
+          else this.inviteParty();
+          break;
         case 'tab': this.cycleLockTarget(e.shiftKey ? -1 : 1); break;
         case 'l': this.toggleLockTarget(); break;
         case 'q':
@@ -2719,6 +2826,13 @@
         this.pointerDownUI = true;
         this.audio.sfx('ui');
         this.handleAction(region.action);
+        return;
+      }
+
+      if (this.pendingSkillIndex !== null && this.state === 'playing' && !this.paused && !this.panel && !this.chatOpen) {
+        this.pointer.lastMove = this.time;
+        this.pointer.type = e.pointerType || 'mouse';
+        this.confirmSkillTarget(p);
         return;
       }
 
@@ -2770,6 +2884,7 @@
       this.pointer.y = p.y;
       this.pointer.inside = true;
       this.pointer.lastMove = this.time;
+      if (this.pendingSkillIndex !== null) this.pendingAimFromPointer = true;
       if (this.joystick.active && e.pointerId === this.joystick.id) {
         let dx = p.x - this.joystick.originX;
         let dy = p.y - this.joystick.originY;
@@ -2990,6 +3105,76 @@
       return this.rawAimPoint();
     }
 
+    skillNeedsAim(index) {
+      if (!this.player) return false;
+      const classId = this.player.classId;
+      return (classId === 'swordsman' && index === 0) ||
+        (classId === 'archer') || (classId === 'mage' && index > 0);
+    }
+
+    activateSkill(index) {
+      if (!this.player || !this.player.alive || this.panel || this.paused) return;
+      if (!this.skillNeedsAim(index)) {
+        this.pendingSkillIndex = null;
+        if (this.network.online) this.network.send({ type: 'skill', index, lockTargetId: this.lockedTargetId });
+        else this.player.useSkill(index, this);
+        return;
+      }
+      if (this.pendingSkillIndex === index) {
+        this.pendingSkillIndex = null;
+        return;
+      }
+      this.pendingSkillIndex = index;
+      this.pendingAimFromPointer = false;
+      this.audio.sfx('ui');
+    }
+
+    skillAimPoint() {
+      const locked = this.currentLockTarget();
+      if (locked) return { x: locked.x, y: locked.y - 8 };
+      if (this.pendingAimFromPointer && this.pointer.inside) {
+        const point = this.rawAimPoint();
+        if (this.player.classId === 'mage' && this.pendingSkillIndex === 2) {
+          const dx = point.x - this.player.x;
+          const dy = point.y - (this.player.y - 8);
+          const length = Math.hypot(dx, dy);
+          if (length > 260) return { x: this.player.x + dx / length * 260, y: this.player.y - 8 + dy / length * 260 };
+        }
+        return point;
+      }
+      const angle = this.player ? (this.player.aim || this.player.facing || 0) : 0;
+      const distance = this.player && this.player.classId === 'mage' && this.pendingSkillIndex === 2 ? 260 : 180;
+      return { x: this.player.x + Math.cos(angle) * distance, y: this.player.y - 8 + Math.sin(angle) * distance };
+    }
+
+    confirmSkillTarget(point) {
+      if (!this.player || this.pendingSkillIndex === null) return;
+      const index = this.pendingSkillIndex;
+      const worldPoint = { x: point.x + this.camX, y: point.y + this.camY };
+      if (this.player.classId === 'mage' && index === 2 && !this.currentLockTarget()) {
+        const dx = worldPoint.x - this.player.x;
+        const dy = worldPoint.y - (this.player.y - 8);
+        const length = Math.hypot(dx, dy);
+        if (length > 260) {
+          worldPoint.x = this.player.x + dx / length * 260;
+          worldPoint.y = this.player.y - 8 + dy / length * 260;
+        }
+      }
+      this.pointer.x = point.x;
+      this.pointer.y = point.y;
+      this.pointer.inside = true;
+      this.pointer.lastMove = this.time;
+      this.pendingSkillIndex = null;
+      this.pendingAimFromPointer = false;
+      const aim = Math.atan2(worldPoint.y - (this.player.y - 10), worldPoint.x - this.player.x);
+      this.player.aim = aim;
+      if (this.network.online) {
+        this.network.send({ type: 'skill', index, aim, aimX: worldPoint.x, aimY: worldPoint.y, lockTargetId: this.lockedTargetId });
+      } else {
+        this.player.useSkill(index, this);
+      }
+    }
+
     getAimAngle(entity) {
       const target = this.currentLockTarget();
       if (target) {
@@ -3161,6 +3346,7 @@
         if (Number.isFinite(data.stats.crit)) p.critChance = data.stats.crit;
       }
       p.party = !!(data.party && (Array.isArray(data.party) ? data.party.length : true));
+      p.partyLeaderId = data.partyLeaderId || null;
       if (data.emote) {
         p.emote = typeof data.emote === 'object'
           ? { text: String(data.emote.text || ''), time: Number(data.emote.time) || 2 }
@@ -3221,7 +3407,11 @@
       if (!Number.isFinite(char.hp) && p.hp <= 0) p.hp = p.maxHp;
       p.alive = p.hp > 0;
 
-      this.quest = Object.assign(freshQuest(), char.quest || {});
+      const savedQuest = char.quest && typeof char.quest === 'object' ? char.quest : {};
+      this.quest = Object.assign(freshQuest(), savedQuest);
+      if (!Object.hasOwn(savedQuest, 'stage') && savedQuest.claimed) {
+        Object.assign(this.quest, { stage: 2, active: false, kills: 0, herbs: 0, goblins: 0, ore: 0, complete: false, claimed: false });
+      }
       this.bossDefeated = !!char.bossDefeated;
       if (char.id || char.playerId) this.network.playerId = char.id || char.playerId;
       if (Array.isArray(char.auction)) this.networkData.auction = char.auction;
@@ -3332,13 +3522,10 @@
           if (Array.isArray(msg.portals) && msg.portals.length) {
             this.portals = msg.portals.map(p => Object.assign({}, p, { radius: 30 }));
           }
-          const partyId = localData && typeof localData.party === 'string' ? localData.party : '';
-          const partyIds = localData && Array.isArray(localData.party) ? localData.party.map(String) : [];
-          this.party = remotes.filter(p => {
-            if (partyIds.length) return partyIds.includes(String(p.id)) || partyIds.includes(p.name) || partyIds.includes(p.username);
-            if (partyId && (p.party === partyId || p.guild === partyId)) return true;
-            return p.party === true;
-          });
+          const partyIds = Array.isArray(localData && localData.partyMembers)
+            ? localData.partyMembers.map(String)
+            : Array.isArray(localData && localData.party) ? localData.party.map(String) : [];
+          this.party = remotes.filter(p => partyIds.includes(String(p.id)));
           break;
         }
         case 'event':
@@ -3428,6 +3615,11 @@
           }));
         }
         this.shake = Math.max(this.shake, 12);
+        return;
+      }
+      if (visual === 'bossSlam') {
+        this.effects.push(new Effect('ring', x, y, { color: '#ff6b4a', radius: 10, endRadius: 88, life: 0.35 }));
+        this.shake = Math.max(this.shake, 9);
         return;
       }
       if (visual !== 'skill') return;
@@ -3561,6 +3753,7 @@
           const guild = ev.guild && typeof ev.guild === 'object'
             ? Object.assign({}, ev.guild) : { name: ev.guild || '' };
           guild.members = Array.isArray(ev.members) ? ev.members : (guild.members || []);
+          guild.weeklyRaid = ev.weeklyRaid || guild.weeklyRaid || null;
           this.networkData.guild = guild;
           break;
         }
@@ -3705,7 +3898,11 @@
       player.mp = clamp(Number.isFinite(data.mp) ? data.mp : player.maxMp, 0, player.maxMp);
       this.player = player;
       this.pet = new Pet(player.x + 24, player.y + 18);
-      this.quest = Object.assign(freshQuest(), data.quest || {});
+      const savedQuest = data.quest && typeof data.quest === 'object' ? data.quest : {};
+      this.quest = Object.assign(freshQuest(), savedQuest);
+      if (!Object.hasOwn(savedQuest, 'stage') && savedQuest.claimed) {
+        Object.assign(this.quest, { stage: 2, active: false, kills: 0, herbs: 0, goblins: 0, ore: 0, complete: false, claimed: false });
+      }
       this.bossDefeated = !!data.bossDefeated;
       this.settings.volume = clamp(typeof data.volume === 'number' ? data.volume : 0.35, 0, 1);
       this.audio.setVolume(this.settings.volume);
@@ -3846,10 +4043,6 @@
           enemy.poisonSource = source;
         }
       }
-      if (source === this.player && this.quest.active && enemy.type === 'slime') {
-        this.quest.kills = Math.min(10, this.quest.kills + 1);
-        this.checkQuest();
-      }
       if (enemy.hp <= 0) this.killEnemy(enemy, source);
     }
 
@@ -3857,6 +4050,11 @@
       enemy.hp = 0;
       enemy.alive = false;
       enemy.deathTimer = 0.5;
+      if (source === this.player && this.quest.active) {
+        if (this.quest.stage === 1 && this.zoneId === 'forest' && enemy.type === 'slime') this.quest.kills = Math.min(10, this.quest.kills + 1);
+        if (this.quest.stage === 2 && this.zoneId === 'cave' && enemy.type === 'goblin') this.quest.goblins = Math.min(8, this.quest.goblins + 1);
+        this.checkQuest();
+      }
       // Fake players keep their own rewards; orphan loot would fall out of view.
       const giveDrops = !(source instanceof OtherPlayer);
       if (giveDrops) {
@@ -3865,6 +4063,7 @@
         this.pickups.push(new Pickup('gold', enemy.x + rand(-8, 8), enemy.y - 4, enemy.goldReward));
         if (enemy.type === 'slime' && Math.random() < 0.55) this.pickups.push(new Pickup('herb', enemy.x, enemy.y - 6));
         if (enemy.type === 'goblin' && Math.random() < 0.22) this.pickups.push(new Pickup('herb', enemy.x, enemy.y - 6));
+        if (enemy.type === 'goblin' && Math.random() < 0.48) this.pickups.push(new Pickup('ore', enemy.x + 4, enemy.y - 6));
         if (enemy.type !== 'boss' && Math.random() < 0.12) {
           const item = randomMobItem();
           this.pickups.push(new Pickup('item', enemy.x + rand(-6, 6), enemy.y - 6, 1, item));
@@ -3908,12 +4107,21 @@
       } else if (p.kind === 'xp') {
         pl.gainXp(p.amount, this);
       } else if (p.kind === 'herb') {
-        if (this.quest.active && this.quest.herbs < 5) {
+        if (this.quest.active && this.zoneId === 'forest' && this.quest.stage === 1 && this.quest.herbs < 5) {
           this.quest.herbs = Math.min(5, this.quest.herbs + 1);
           this.addFloater(pl.x, pl.y - 46, `Herb ${this.quest.herbs}/5`, '#8ee46d', 11);
           this.checkQuest();
         } else {
           this.addFloater(pl.x, pl.y - 46, 'Herb', '#8ee46d', 10);
+        }
+      } else if (p.kind === 'ore') {
+        pl.materials.ore += 1;
+        if (this.quest.active && this.zoneId === 'cave' && this.quest.stage === 2 && this.quest.ore < 4) {
+          this.quest.ore = Math.min(4, this.quest.ore + 1);
+          this.addFloater(pl.x, pl.y - 46, `Ore ${this.quest.ore}/4`, '#9ce7ff', 11);
+          this.checkQuest();
+        } else {
+          this.addFloater(pl.x, pl.y - 46, 'Ore', '#9ce7ff', 10);
         }
       } else {
         if (!pl.addItem(p.item)) {
@@ -3985,6 +4193,22 @@
       this.audio.sfx('pickup');
     }
 
+    leaveParty() {
+      if (this.network.online) { this.network.send({ type: 'partyLeave' }); return; }
+      if (!this.party.length) { this.log('You are not in a party.', '#9aa6bd'); return; }
+      this.party.forEach(member => { member.party = false; });
+      this.party = [];
+      this.log('You left the party.', '#ffd75e');
+    }
+
+    disbandParty() {
+      if (this.network.online) { this.network.send({ type: 'partyDisband' }); return; }
+      if (!this.party.length) { this.log('You are not in a party.', '#9aa6bd'); return; }
+      this.party.forEach(member => { member.party = false; });
+      this.party = [];
+      this.log('You disbanded the party.', '#ffd75e');
+    }
+
     sendChat() {
       const text = this.chatInput.trim();
       this.chatOpen = false;
@@ -3995,7 +4219,10 @@
     }
 
     checkQuest() {
-      if (this.quest.active && !this.quest.complete && this.quest.kills >= 10 && this.quest.herbs >= 5) {
+      const ready = this.quest.stage === 2
+        ? this.quest.goblins >= 8 && this.quest.ore >= 4
+        : this.quest.kills >= 10 && this.quest.herbs >= 5;
+      if (this.quest.active && !this.quest.complete && ready) {
         this.quest.complete = true;
         this.log('Quest complete! Return to Elder Tarn for your reward.', '#ffd75e');
         this.audio.sfx('level');
@@ -4008,13 +4235,29 @@
       if (this.quest.claimed) return;
       if (this.quest.complete) { this.turnInQuest(); return; }
       this.quest.active = true;
-      this.log('Quest accepted: kill 10 slimes and collect 5 herbs.', '#ffd75e');
+      this.log(this.quest.stage === 2
+        ? 'Cave Patrol accepted: defeat 8 goblins and collect 4 ore.'
+        : 'Forest Cleanup accepted: defeat 10 slimes and collect 5 herbs.', '#ffd75e');
       this.save();
     }
 
     turnInQuest() {
       if (this.network.online) { this.network.send({ type: 'questTurnIn' }); this.panel = null; return; }
       if (!this.quest.complete || this.quest.claimed) return;
+      if (this.quest.stage === 1) {
+        this.quest.stage = 2;
+        this.quest.active = false;
+        this.quest.complete = false;
+        this.quest.kills = 0;
+        this.quest.herbs = 0;
+        this.player.gold += 100;
+        this.player.gainXp(180, this);
+        this.log('Forest Cleanup complete! +100 gold, +180 XP. Cave Patrol unlocked.', '#ffd75e');
+        this.audio.sfx('level');
+        this.panel = null;
+        this.save();
+        return;
+      }
       this.quest.claimed = true;
       this.quest.active = false;
       this.player.gold += 140;
@@ -4023,7 +4266,7 @@
         spriteColor: '#e3b7ff', icon: 'A', desc: 'Reward from Elder Tarn.'
       });
       if (!this.player.addItem(reward)) this.player.gold += 60;
-      this.log('Quest turned in! +140 gold, +260 XP, epic reward.', '#ffd75e');
+      this.log('Cave Patrol complete! +140 gold, +260 XP, epic reward.', '#ffd75e');
       this.audio.sfx('level');
       this.panel = null;
       this.save();
@@ -4150,8 +4393,7 @@
       if (action !== 'toggleMobileMenu') this.mobileMenuOpen = false;
       if (/^skill[0-2]$/.test(action)) {
         const i = parseInt(action.slice(5), 10);
-        if (this.network.online) this.network.send({ type: 'skill', index: i, lockTargetId: this.lockedTargetId });
-        else this.player && this.player.useSkill(i, this);
+        this.activateSkill(i);
         return;
       }
       if (action.startsWith('shopBuy')) { this.buyShopItem(parseInt(action.slice(7), 10)); return; }
@@ -4187,6 +4429,8 @@
         case 'interact': this.interact(); break;
         case 'emote': this.emote(); break;
         case 'party': this.inviteParty(); break;
+        case 'partyLeave': this.leaveParty(); break;
+        case 'partyDisband': this.disbandParty(); break;
         case 'potion':
           if (this.network.online) this.network.send({ type: 'potion' });
           else if (this.player) { const idx = this.player.inventory.findIndex(it => it.slot === 'consumable'); if (idx >= 0) this.player.usePotion(idx, this); }
@@ -4415,6 +4659,7 @@
         if (this.mobileMenuOpen) this.drawMobileMenu();
         else this.drawMobileControls();
       }
+      this.drawSkillTargetHint();
       this.drawDraggedItem();
     }
 
@@ -4478,7 +4723,68 @@
       // Falling meteors are drawn as Effect('meteor') so offline and online match.
       for (const e of this.effects) e.draw(ctx);
       this.drawLockTarget();
+      this.drawSkillTargetPreview();
       for (const f of this.floaters) f.draw(ctx);
+      ctx.restore();
+    }
+
+    drawSkillTargetPreview() {
+      if (this.pendingSkillIndex === null || !this.player) return;
+      const index = this.pendingSkillIndex;
+      const point = this.skillAimPoint();
+      const classId = this.player.classId;
+      const color = classId === 'mage' ? (index === 2 ? '#ff9c42' : '#d7b8ff')
+        : classId === 'archer' ? '#b9ffcb' : '#dceeff';
+      const angle = Math.atan2(point.y - (this.player.y - 10), point.x - this.player.x);
+      const isMeteor = classId === 'mage' && index === 2;
+      const isBlink = classId === 'mage' && index === 1;
+      const distance = isBlink ? 170 : classId === 'swordsman' ? 95 : 160;
+      const tx = isMeteor ? point.x : this.player.x + Math.cos(angle) * distance;
+      const ty = isMeteor ? point.y : this.player.y + Math.sin(angle) * distance;
+      const ctx = this.ctx;
+      const centerY = isMeteor ? ty : ty - 8;
+      ctx.save();
+      ctx.globalAlpha = 0.82;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      if (isMeteor) {
+        ctx.setLineDash([7, 5]);
+        ctx.beginPath();
+        ctx.arc(tx, centerY, 108, 0, TAU);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      } else {
+        ctx.setLineDash([6, 5]);
+        ctx.beginPath();
+        ctx.moveTo(this.player.x, this.player.y - 8);
+        ctx.lineTo(tx, centerY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      const radius = isMeteor ? 13 : isBlink ? 12 : 10;
+      ctx.beginPath();
+      ctx.arc(tx, centerY, radius, 0, TAU);
+      ctx.moveTo(tx - radius - 5, centerY); ctx.lineTo(tx - radius + 1, centerY);
+      ctx.moveTo(tx + radius - 1, centerY); ctx.lineTo(tx + radius + 5, centerY);
+      ctx.moveTo(tx, centerY - radius - 5); ctx.lineTo(tx, centerY - radius + 1);
+      ctx.moveTo(tx, centerY + radius - 1); ctx.lineTo(tx, centerY + radius + 5);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    drawSkillTargetHint() {
+      if (this.pendingSkillIndex === null || !this.player) return;
+      const skill = SKILLS[this.player.classId][this.pendingSkillIndex];
+      const ctx = this.ctx;
+      ctx.save();
+      ctx.fillStyle = 'rgba(8, 13, 24, 0.88)';
+      ctx.fillRect(VIEW_W / 2 - 150, 12, 300, 28);
+      ctx.strokeStyle = '#8fa4c9';
+      ctx.strokeRect(VIEW_W / 2 - 150 + 0.5, 12.5, 299, 27);
+      ctx.font = 'bold 12px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#fff';
+      ctx.fillText(`${skill.name}: tap/click target | Esc cancel`, VIEW_W / 2, 30);
       ctx.restore();
     }
 
@@ -4657,9 +4963,10 @@
         ctx.fillStyle = '#dbe6ff';
         ctx.font = '9px monospace';
         const words = def.name.split(' ');
-        words.forEach((word, k) => ctx.fillText(word, x + 35, y + 18 + k * 10));
+        const labelStartY = words.length === 1 ? y + 30 : y + 24;
+        words.forEach((word, k) => ctx.fillText(word, x + 35, labelStartY + k * 10, 58));
         ctx.fillStyle = p.mp >= def.cost ? '#8ee6ff' : '#ff9b9b';
-        ctx.fillText(`cost ${def.cost}`, x + 35, y + 47);
+        ctx.fillText(`cost ${def.cost}`, x + 35, y + 52);
         ctx.fillStyle = '#9aa6bd';
         ctx.fillText(`R${p.skillRanks[i]}`, x + 58, y + 14);
         if (cd > 0) {
@@ -4689,13 +4996,14 @@
       ctx.font = 'bold 11px monospace';
       ctx.textAlign = 'left';
       ctx.fillStyle = '#ffd75e';
-      ctx.fillText(q.complete ? 'Quest ready to turn in!' : 'Quest: Forest Cleanup', 20, 138);
+      const title = q.stage === 2 ? 'Cave Patrol' : 'Forest Cleanup';
+      ctx.fillText(q.complete ? 'Quest ready to turn in!' : `Quest: ${title}`, 20, 138);
       ctx.font = '10px monospace';
       ctx.fillStyle = '#dbe6ff';
-      ctx.fillText(`Slimes: ${q.kills}/10`, 20, 154);
-      ctx.fillText(`Herbs: ${q.herbs}/5`, 120, 154);
+      ctx.fillText(q.stage === 2 ? `Goblins: ${q.goblins || 0}/8` : `Slimes: ${q.kills}/10`, 20, 154);
+      ctx.fillText(q.stage === 2 ? `Ore: ${q.ore || 0}/4` : `Herbs: ${q.herbs}/5`, 120, 154);
       ctx.fillStyle = '#9aa6bd';
-      ctx.fillText(q.complete ? 'Find Elder Tarn and press F' : 'Talk to Elder Tarn to turn in', 20, 170);
+      ctx.fillText(q.complete ? 'Find Elder Tarn and press F' : 'Complete both objectives', 20, 170);
     }
 
     drawParty() {
@@ -5144,18 +5452,30 @@
       const y = 88;
       const w = 464;
       const h = 356;
-      panel(ctx, x, y, w, h, 'Quest - Forest Cleanup');
+      const stage = this.quest.stage === 2 ? 2 : 1;
+      const title = stage === 2 ? 'Cave Patrol' : 'Forest Cleanup';
+      panel(ctx, x, y, w, h, `Quest - ${title} (${stage}/2)`);
       ctx.font = '12px monospace';
       ctx.textAlign = 'left';
       ctx.fillStyle = '#dbe6ff';
-      wrappedText(ctx, 'Elder Tarn needs the forest cleared. Defeat 10 slimes and bring back 5 herbs. Herbs drop from slimes and goblins.', x + 24, y + 54, w - 48, 18, 4);
-      drawBar(ctx, x + 24, y + 128, w - 48, 16, this.quest.kills / 10, '#ff8c42', `Slimes: ${this.quest.kills}/10`);
-      drawBar(ctx, x + 24, y + 154, w - 48, 16, this.quest.herbs / 5, '#6ee787', `Herbs: ${this.quest.herbs}/5`);
+      const description = stage === 2
+        ? 'Elder Tarn needs the cave cleared. Defeat 8 goblins and bring back 4 ore. Ore drops from goblins.'
+        : 'Elder Tarn needs the forest cleared. Defeat 10 slimes and bring back 5 herbs. Herbs drop from monsters.';
+      wrappedText(ctx, description, x + 24, y + 54, w - 48, 18, 4);
+      const firstProgress = stage === 2 ? (this.quest.goblins || 0) / 8 : this.quest.kills / 10;
+      const secondProgress = stage === 2 ? (this.quest.ore || 0) / 4 : this.quest.herbs / 5;
+      drawBar(ctx, x + 24, y + 128, w - 48, 16, firstProgress, '#ff8c42', stage === 2 ? `Goblins: ${this.quest.goblins || 0}/8` : `Slimes: ${this.quest.kills}/10`);
+      drawBar(ctx, x + 24, y + 154, w - 48, 16, secondProgress, '#6ee787', stage === 2 ? `Ore: ${this.quest.ore || 0}/4` : `Herbs: ${this.quest.herbs}/5`);
+      ctx.textAlign = 'left';
       ctx.font = '11px monospace';
       ctx.fillStyle = '#9fb0cd';
       const status = this.quest.claimed ? 'Reward already claimed.'
-        : this.quest.complete ? 'Ready to turn in! Reward: 140 gold, 260 XP, epic armor.'
-          : this.quest.active ? 'Quest in progress. Keep hunting!' : 'You have not accepted this quest yet.';
+        : this.quest.complete ? stage === 1
+          ? 'Ready to turn in! Reward: 100 gold and 180 XP. This unlocks the Cave Patrol.'
+          : 'Ready to turn in! Reward: 140 gold, 260 XP, and an epic armor piece.'
+          : this.quest.active ? 'Quest in progress. Keep hunting!' : stage === 2
+            ? 'Second request in Elder Tarn’s quest chain.'
+            : 'First request in Elder Tarn’s quest chain.';
       wrappedText(ctx, status, x + 24, y + 196, w - 48, 16, 3);
       if (this.quest.claimed) {
         this.button(x + 162, y + 294, 140, 32, 'CLOSE', 'closePanel', { color: '#34405c' });
@@ -5233,12 +5553,12 @@
         ctx.font = '10px monospace';
         if (item) drawItemImage(ctx, item, x + 398, ry + 2, 26);
         ctx.fillStyle = item ? RARITY[item.rarity].color : '#dbe6ff';
-        ctx.fillText(item ? item.name : 'Item', x + 428, ry + 19);
+        ctx.fillText(item ? item.name : 'Item', x + 428, ry + 13, 116);
         ctx.fillStyle = '#ffd75e';
-        ctx.fillText(`${row.price || 0}g`, x + 554, ry + 19);
+        ctx.fillText(`${row.price || 0}g`, x + 550, ry + 19, 62);
         const seller = String(row.ownerName || row.seller || row.username || '');
         ctx.fillStyle = '#9aa6bd';
-        ctx.fillText(seller, x + 602, ry + 19);
+        ctx.fillText(seller || 'Unknown seller', x + 428, ry + 25, 116);
         if (seller === this.loginFields.username) {
           this.button(x + 626, ry + 3, 46, 24, 'CANCEL', 'auctionRemove:' + row.id, { color: '#6b3542', fontSize: 8 });
         } else {
@@ -5305,27 +5625,27 @@
       }
       mail.forEach((row, i) => {
         const item = row.item ? normalizeItem(row.item) : null;
-        const ry = y + 58 + i * 38;
+        const ry = y + 58 + i * 32;
         ctx.fillStyle = 'rgba(18,26,44,0.9)';
-        ctx.fillRect(x + 300, ry, 378, 34);
+        ctx.fillRect(x + 300, ry, 378, 30);
         ctx.strokeStyle = item ? RARITY[item.rarity].color : '#58668a';
-        ctx.strokeRect(x + 300.5, ry + 0.5, 377, 33);
+        ctx.strokeRect(x + 300.5, ry + 0.5, 377, 29);
         ctx.font = '10px monospace';
         ctx.textAlign = 'left';
         ctx.fillStyle = '#8ee6ff';
-        ctx.fillText(`From: ${row.fromName || row.from || row.sender || row.username || 'Unknown'}`, x + 308, ry + 14);
+        ctx.fillText(`From: ${row.fromName || row.from || row.sender || row.username || 'Unknown'}`, x + 308, ry + 13, 150);
         ctx.fillStyle = '#dbe6ff';
-        ctx.fillText(String(row.message || '').slice(0, 34), x + 308, ry + 27);
+        ctx.fillText(String(row.message || ''), x + 308, ry + 25, 150);
         if (item) {
           drawItemImage(ctx, item, x + 464, ry + 2, 20);
           ctx.fillStyle = RARITY[item.rarity].color;
-          ctx.fillText(item.name, x + 488, ry + 14);
+          ctx.fillText(item.name, x + 488, ry + 13, 126);
         }
         if (row.gold) {
           ctx.fillStyle = '#ffd75e';
-          ctx.fillText(`${row.gold}g`, x + 470, ry + 27);
+          ctx.fillText(`${row.gold}g`, x + 470, ry + 25);
         }
-        this.button(x + 626, ry + 5, 44, 24, 'TAKE', 'mailTake:' + row.id, { color: '#3f7d55', fontSize: 8 });
+        this.button(x + 626, ry + 3, 44, 24, 'TAKE', 'mailTake:' + row.id, { color: '#3f7d55', fontSize: 8 });
       });
       this.button(x + 270, y + 408, 160, 30, 'CLOSE', 'closePanel', { color: '#34405c' });
     }
@@ -5358,13 +5678,19 @@
         this.button(x + 24, y + 138, 140, 30, 'CREATE', 'guildCreate', { color: '#3f7d55' });
         this.button(x + 176, y + 138, 140, 30, 'JOIN BY NAME', 'guildJoin', { color: '#2f5f8c' });
       } else {
+        const raid = guild.weeklyRaid || { kills: 0, target: 3, rewardGold: 150 };
+        drawBar(ctx, x + 24, y + 62, 420, 12, (raid.kills || 0) / (raid.target || 3), '#c9a6ff', `Weekly Raid: ${raid.kills || 0}/${raid.target || 3} bosses`);
+        ctx.textAlign = 'left';
+        ctx.font = '9px monospace';
+        ctx.fillStyle = '#9fb0cd';
+        ctx.fillText(`Reward: ${raid.rewardGold || 150} gold for guild members on the raid team`, x + 24, y + 84);
         const members = Array.isArray(guild.members) ? guild.members : [];
         ctx.font = '11px monospace';
         ctx.fillStyle = '#dbe6ff';
-        ctx.fillText(`Members (${members.length})`, x + 24, y + 92);
+        ctx.fillText(`Members (${members.length})`, x + 24, y + 102);
         members.slice(0, 14).forEach((m, i) => {
           ctx.fillStyle = m.rank === 'leader' ? '#ffd75e' : '#dbe6ff';
-          ctx.fillText(`${i + 1}. ${m.name}  Lv ${m.level || 1}  [${m.rank || 'member'}]`, x + 30, y + 116 + i * 18);
+          ctx.fillText(`${i + 1}. ${m.name}  Lv ${m.level || 1}  [${m.rank || 'member'}]`, x + 30, y + 124 + i * 18, 390);
         });
         this.button(x + 24, y + 372, 140, 28, 'GUILD CHAT', 'chatGuild', { color: '#5b4b8c' });
         this.button(x + 176, y + 372, 140, 28, 'LEAVE GUILD', 'guildLeave', { color: '#6b3542' });
@@ -5536,6 +5862,7 @@
       this.button(x + 320, y + 130, 34, 22, '+', 'volumeUp', { color: '#34405c' });
 
       ctx.font = 'bold 11px monospace';
+      ctx.textAlign = 'left';
       ctx.fillStyle = '#ffd75e';
       ctx.fillText('CONTROLS', x + 26, y + 186);
       const controls = [
@@ -5544,14 +5871,16 @@
         '1 2 3 - class skills',
         'I - bag   K - skills   B - auction',
         'F - interact with NPC/portal',
-        'E - emote   P - invite party',
-        'Q - potion   Enter - chat   N - raid',
-        'Tab - lock   L - unlock   Esc - pause'
+        'E emote   P invite',
+        'Shift+P leave   Alt+P disband (leader)',
+        'Q potion   Enter chat   N raid',
+        'Tab lock   L unlock   Esc pause'
       ];
       controls.forEach((line, i) => {
         ctx.font = '10px monospace';
+        ctx.textAlign = 'left';
         ctx.fillStyle = '#b9c7e6';
-        ctx.fillText(line, x + 26, y + 206 + i * 16);
+        ctx.fillText(line, x + 26, y + 206 + i * 14);
       });
       this.button(x + 106, y + 350, 160, 30, 'QUIT TO TITLE', 'quitToSelect', { color: '#6b3542' });
     }
@@ -5624,6 +5953,8 @@
         { label: 'GUILD', action: 'openGuild', online: true },
         { label: 'QUEST', action: 'openQuest' },
         { label: 'PARTY', action: 'party' },
+        { label: 'LEAVE PARTY', action: 'partyLeave' },
+        { label: 'DISBAND (LEADER)', action: 'partyDisband' },
         { label: 'POTION', action: 'potion' },
         { label: 'CHAT', action: 'chat' },
         { label: 'RAID', action: 'enterDungeon', online: true },
@@ -5641,7 +5972,10 @@
       items.forEach((item, i) => {
         const bx = startX + (i % cols) * (bw + gapX);
         const by = startY + Math.floor(i / cols) * (bh + gapY);
-        const unavailable = item.online && !this.network.online;
+        const hasParty = this.network.online ? !!(this.player && this.player.party) : this.party.length > 0;
+        const isLeader = !this.network.online || (this.player && String(this.player.partyLeaderId) === String(this.network.playerId));
+        const partyAction = item.action === 'partyLeave' || item.action === 'partyDisband';
+        const unavailable = (item.online && !this.network.online) || (partyAction && !hasParty) || (item.action === 'partyDisband' && !isLeader);
         this.button(bx, by, bw, bh, item.label, item.action, {
           color: unavailable ? '#3a3f50' : (item.color || '#34405c'),
           textColor: unavailable ? '#8c97ad' : '#fff',

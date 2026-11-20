@@ -79,6 +79,13 @@ export class GameDB {
         PRIMARY KEY (guild_id, account_id),
         FOREIGN KEY (guild_id) REFERENCES guilds(id) ON DELETE CASCADE
       );
+
+      CREATE TABLE IF NOT EXISTS guild_weekly_goals (
+        guild_id    INTEGER PRIMARY KEY,
+        week        INTEGER NOT NULL,
+        boss_kills  INTEGER NOT NULL DEFAULT 0,
+        FOREIGN KEY (guild_id) REFERENCES guilds(id) ON DELETE CASCADE
+      );
     `);
   }
 
@@ -333,7 +340,43 @@ export class GameDB {
       };
     });
 
-    return { guild: { id: Number(guild.id), name: guild.name }, members };
+    const currentWeek = Math.floor(Date.now() / 604800000);
+    const savedGoal = this.db.prepare('SELECT week, boss_kills FROM guild_weekly_goals WHERE guild_id = ?').get(Number(guild.id));
+    const weeklyRaidKills = savedGoal && Number(savedGoal.week) === currentWeek
+      ? Math.min(3, Number(savedGoal.boss_kills)) : 0;
+    return {
+      guild: { id: Number(guild.id), name: guild.name },
+      members,
+      weeklyRaid: { kills: weeklyRaidKills, target: 3, rewardGold: 150 }
+    };
+  }
+
+  guildRecordBossKill(accountIds) {
+    const ids = [...new Set((accountIds || []).map(Number).filter(id => Number.isInteger(id) && id > 0))];
+    if (!ids.length) return [];
+    const placeholders = ids.map(() => '?').join(',');
+    const guilds = this.db.prepare(`
+      SELECT DISTINCT guild_id FROM guild_members WHERE account_id IN (${placeholders})
+    `).all(...ids).map(row => Number(row.guild_id));
+    const week = Math.floor(Date.now() / 604800000);
+    const readGoal = this.db.prepare('SELECT week, boss_kills FROM guild_weekly_goals WHERE guild_id = ?');
+    const writeGoal = this.db.prepare(`
+      INSERT INTO guild_weekly_goals (guild_id, week, boss_kills) VALUES (?, ?, ?)
+      ON CONFLICT(guild_id) DO UPDATE SET week = excluded.week, boss_kills = excluded.boss_kills
+    `);
+    const membersFor = this.db.prepare('SELECT account_id FROM guild_members WHERE guild_id = ?');
+    return guilds.map(guildId => {
+      const saved = readGoal.get(guildId);
+      const previous = saved && Number(saved.week) === week ? Number(saved.boss_kills) : 0;
+      const kills = previous + 1;
+      writeGoal.run(guildId, week, kills);
+      return {
+        guildId,
+        kills,
+        completed: previous < 3 && kills >= 3,
+        accountIds: membersFor.all(guildId).map(row => Number(row.account_id))
+      };
+    });
   }
 
   guildMemberAccountIds(accountId) {

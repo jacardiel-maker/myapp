@@ -100,8 +100,8 @@ const NPC_DEFS = [
 
 const ZONE_ENEMY_COUNTS = {
   forest: { slime: 15, goblin: 6 },
-  cave: { slime: 6, goblin: 11 },
-  desert: { slime: 8, goblin: 13 }
+  cave: { slime: 6, goblin: 7, brute: 4 },
+  desert: { slime: 8, goblin: 9, scout: 4 }
 };
 
 const ZONE_MUL = { forest: 1, cave: 1.7, desert: 2.4 };
@@ -152,12 +152,38 @@ function generateZone(id) {
   const tiles = new Uint8Array(w * h);
   const baseTile = id === 'forest' ? TILE_ID.GRASS : id === 'cave' ? TILE_ID.CAVE : TILE_ID.SAND;
 
-  // Clean, open maps: no trees, water, cacti or internal walls to fight around.
-  // Cave keeps only a two-tile border as the map boundary.
+  // Start with open terrain and a cave border. Decorative patches are added below.
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
       const border = id === 'cave' && (x < 2 || y < 2 || x >= w - 2 || y >= h - 2);
       tiles[y * w + x] = border ? TILE_ID.ROCK : baseTile;
+    }
+  }
+  // Decorative landmarks mirror the browser map generator. TREE/WATER/CACTUS
+  // remain walkable; only ROCK is a collision tile.
+  if (id === 'forest' || id === 'desert') {
+    const rng = mulberry32(id === 'forest' ? 4101 : 4103);
+    const safePoints = [ZONE_SPAWN[id], ...PORTAL_DEFS[id].flatMap(p => [p, p.arrive]),
+      ...(id === 'forest' ? NPC_DEFS : [])];
+    for (let y = 5; y < h - 5; y++) {
+      for (let x = 5; x < w - 5; x++) {
+        if (rng() > 0.018) continue;
+        const px = x * TILE + TILE / 2;
+        const py = y * TILE + TILE / 2;
+        if (safePoints.some(p => Math.hypot(p.x - px, p.y - py) < 230)) continue;
+        const radius = rng() < 0.28 ? 2 : 1;
+        for (let oy = -radius; oy <= radius; oy++) {
+          for (let ox = -radius; ox <= radius; ox++) {
+            if (Math.abs(ox) + Math.abs(oy) > radius + 1) continue;
+            const tx = x + ox;
+            const ty = y + oy;
+            if (tx < 2 || ty < 2 || tx >= w - 2 || ty >= h - 2) continue;
+            tiles[ty * w + tx] = id === 'forest'
+              ? (rng() < 0.72 ? TILE_ID.TREE : TILE_ID.WATER)
+              : TILE_ID.CACTUS;
+          }
+        }
+      }
     }
   }
   return { id, w, h, tiles };
@@ -341,7 +367,7 @@ function randomMobDropItem() {
 }
 
 function freshQuest() {
-  return { active: false, kills: 0, herbs: 0, complete: false, claimed: false };
+  return { stage: 1, active: false, kills: 0, herbs: 0, goblins: 0, ore: 0, complete: false, claimed: false };
 }
 
 export function freshCharacter(username, classId = 'swordsman') {
@@ -552,6 +578,7 @@ export class World {
     client.player = null;
     client.roomId = null;
     client.party = new Set();
+    client.partyLeaderId = null;
     client.lastInput = { dx: 0, dy: 0, aimX: null, aimY: null, lockTargetId: null };
     client.lastInputAt = 0;
     client.lockTargetId = null;
@@ -581,9 +608,8 @@ export class World {
       this.cleanupEmptyDungeon(room);
     }
 
-    // Break party links both ways.
-    for (const other of client.party) other.party.delete(client);
-    client.party.clear();
+    // Remove the disconnecting player and promote someone if they led the group.
+    this.removePartyMember(client, false);
 
     this.clients.delete(client);
     this.saveClient(client, false);
@@ -592,6 +618,13 @@ export class World {
   hydrate(client) {
     const character = client.character;
     if (!character) return;
+    const savedQuest = character.quest && typeof character.quest === 'object' ? character.quest : {};
+    character.quest = { ...freshQuest(), ...savedQuest };
+    // The earlier one-step quest awarded an epic item and marked the entire
+    // quest claimed. Treat that reward as the first chain step for old saves.
+    if (!Object.hasOwn(savedQuest, 'stage') && savedQuest.claimed) {
+      Object.assign(character.quest, { stage: 2, active: false, kills: 0, herbs: 0, goblins: 0, ore: 0, complete: false, claimed: false });
+    }
     const stats = this.statsFor(client);
     client.maxHp = stats.maxHp;
     client.maxMp = stats.maxMp;
@@ -796,6 +829,8 @@ export class World {
       aim: round(client.aim, 3),
       emote: client.emote ? { text: client.emote.text, time: round(client.emote.time, 2) } : null,
       party: client.party.size > 0,
+      partyMembers: [...client.party].map(member => member.id),
+      partyLeaderId: client.partyLeaderId,
       stats: {
         attack: stats.attack,
         speed: round(stats.speed, 1),
@@ -825,6 +860,9 @@ export class World {
         hp: Math.max(0, Math.round(e.hp)),
         maxHp: e.maxHp,
         phase: e.phase || 1,
+        slamWindup: round(e.slamWindup || 0, 2),
+        slamX: Number.isFinite(e.slamX) ? round(e.slamX, 1) : null,
+        slamY: Number.isFinite(e.slamY) ? round(e.slamY, 1) : null,
         alive: !!e.alive,
         radius: e.radius
       })),
@@ -1062,7 +1100,11 @@ export class World {
       ? { hp: 46, damage: 8, speed: 44, range: 20, xp: 12, gold: 6, radius: 13, aggro: 240 }
       : type === 'goblin'
         ? { hp: 78, damage: 13, speed: 58, range: 24, xp: 22, gold: 11, radius: 13, aggro: 290 }
-        : { hp: 920, damage: 26, speed: 50, range: 34, xp: 400, gold: 320, radius: 20, aggro: 760 };
+        : type === 'brute'
+          ? { hp: 180, damage: 24, speed: 34, range: 30, xp: 34, gold: 18, radius: 16, aggro: 320 }
+          : type === 'scout'
+            ? { hp: 62, damage: 10, speed: 56, range: 190, xp: 26, gold: 14, radius: 12, aggro: 340 }
+            : { hp: 920, damage: 26, speed: 50, range: 34, xp: 400, gold: 320, radius: 20, aggro: 760 };
 
     const isBoss = type === 'boss';
     const scale = multiplier * (isBoss ? 1 : 1);
@@ -1084,6 +1126,9 @@ export class World {
       attackCd: rand(0, 0.8),
       abilityTimer: 4,
       phase: 1,
+      slamWindup: 0,
+      slamX: null,
+      slamY: null,
       targetId: null,
       retarget: 0,
       flash: 0,
@@ -1139,12 +1184,16 @@ export class World {
       }
       enemy.targetId = target ? target.id : null;
     }
-    if (!target) return;
+    if (!target) {
+      if (enemy.type === 'boss' && enemy.slamWindup > 0) this.updateBoss(room, enemy, null, 0, dt, now);
+      return;
+    }
 
     const distance = dist(enemy, target);
     const angle = Math.atan2(target.y - enemy.y, target.x - enemy.x);
 
-    if (distance > enemy.range + 12 - 4) {
+    const retreating = enemy.type === 'scout' && distance < enemy.range * 0.62;
+    if (distance > enemy.range + 12 - 4 || retreating) {
       let direction;
       if (this.hasLineOfSight(room, enemy.x, enemy.y, target.x, target.y)) {
         direction = { x: Math.cos(angle), y: Math.sin(angle) };
@@ -1158,10 +1207,25 @@ export class World {
       }
       const slow = enemy.slowTimer > 0 ? enemy.slowFactor : 1;
       if (enemy.slowTimer > 0) enemy.slowTimer -= dt;
-      this.tryMove(room, enemy, direction.x * enemy.speed * slow * dt, direction.y * enemy.speed * slow * dt, enemy.radius);
+      const moveSign = retreating ? -1 : 1;
+      this.tryMove(room, enemy, direction.x * enemy.speed * slow * dt * moveSign, direction.y * enemy.speed * slow * dt * moveSign, enemy.radius);
     }
 
-    if (distance < enemy.range + 12 + 4 && enemy.attackCd <= 0) {
+    if (enemy.type === 'scout' && distance <= enemy.range && enemy.attackCd <= 0) {
+      enemy.attackCd = 1.65;
+      this.spawnProjectile(room, {
+        x: enemy.x + Math.cos(angle) * 12,
+        y: enemy.y + Math.sin(angle) * 12,
+        vx: Math.cos(angle) * 225,
+        vy: Math.sin(angle) * 225,
+        damage: enemy.damage,
+        team: 'enemy',
+        kind: 'scoutBolt',
+        radius: 5,
+        life: 2.4,
+        ownerId: enemy.id
+      });
+    } else if (enemy.type !== 'scout' && distance < enemy.range + 12 + 4 && enemy.attackCd <= 0) {
       enemy.attackCd = enemy.type === 'boss' ? 1.1 : 0.9;
       this.damagePlayer(target, enemy.damage, enemy, enemy.type);
     }
@@ -1170,11 +1234,24 @@ export class World {
   }
 
   updateBoss(room, boss, target, angle, dt, now) {
+    if (boss.slamWindup > 0) {
+      boss.slamWindup = Math.max(0, boss.slamWindup - dt);
+      if (boss.slamWindup === 0) {
+        this.areaDamagePlayers(room, boss.slamX, boss.slamY, 76, 24, 'slam');
+        this.eventRoom(room, 'fx', { visual: 'bossSlam', x: boss.slamX, y: boss.slamY });
+        this.sfxRoom(room, 'boss');
+        boss.slamX = null;
+        boss.slamY = null;
+        boss.abilityTimer = 2.2;
+      }
+      return;
+    }
     const ratio = boss.hp / boss.maxHp;
     const newPhase = ratio < 0.28 ? 3 : ratio < 0.6 ? 2 : 1;
     if (newPhase !== boss.phase) {
       boss.phase = newPhase;
       boss.abilityTimer = 1.2;
+      boss.slamWindup = 0;
       this.eventRoom(room, 'system', { text: `Boss enters phase ${newPhase}!`, color: '#ff8c42' });
       this.sfxRoom(room, 'boss');
     }
@@ -1205,13 +1282,13 @@ export class World {
       boss.abilityTimer = 2.5;
     }
 
-    // Phase 3: slam AoE centred on the current target.
+    // Phase 3: warn players before the slam so they can dodge it.
     if (boss.phase >= 3 && target && dist(boss, target) < 150) {
-      for (const hero of room.players) {
-        if (dist(hero, target) < 76) this.damagePlayer(hero, 24, boss, 'slam');
-      }
-      this.eventRoom(room, 'sfx', { name: 'boss' });
-      boss.abilityTimer = Math.min(boss.abilityTimer, 2.2);
+      boss.slamX = target.x;
+      boss.slamY = target.y;
+      boss.slamWindup = 0.75;
+      boss.abilityTimer = 2.2;
+      this.eventRoom(room, 'system', { text: 'The boss is charging a slam! Move out of the glowing circle!', color: '#ff8c42' });
     }
   }
 
@@ -1247,22 +1324,18 @@ export class World {
       }
     }
 
-    if (source && source.character && source.character.quest.active && enemy.type === 'slime') {
-      const quest = source.character.quest;
-      quest.kills = Math.min(10, quest.kills + 1);
-      this.checkQuestComplete(source);
-    }
-
     if (enemy.hp <= 0) this.killEnemy(room, enemy, source);
   }
 
   checkQuestComplete(client) {
     const quest = client.character.quest;
-    if (quest.active && !quest.complete && quest.kills >= 10 && quest.herbs >= 5) {
+    const ready = quest.stage === 2
+      ? quest.goblins >= 8 && quest.ore >= 4
+      : quest.kills >= 10 && quest.herbs >= 5;
+    if (quest.active && !quest.complete && ready) {
       quest.complete = true;
       this.event(client, 'quest', { text: 'Quest complete! Return to Elder Tarn.' });
       this.sfx(client, 'level');
-      this.sendCharacter(client);
     }
   }
 
@@ -1270,6 +1343,23 @@ export class World {
     enemy.hp = 0;
     enemy.alive = false;
     enemy.deathTimer = 0.5;
+
+    if (source && source.character && source.character.quest.active) {
+      const quest = source.character.quest;
+      let progressed = false;
+      if (quest.stage === 1 && room.zoneId === 'forest' && enemy.type === 'slime' && quest.kills < 10) {
+        quest.kills = Math.min(10, quest.kills + 1);
+        progressed = true;
+      }
+      if (quest.stage === 2 && room.zoneId === 'cave' && enemy.type === 'goblin' && quest.goblins < 8) {
+        quest.goblins = Math.min(8, quest.goblins + 1);
+        progressed = true;
+      }
+      if (progressed) {
+        this.checkQuestComplete(source);
+        this.sendCharacter(source);
+      }
+    }
 
     this.spawnPickup(room, 'xp', enemy.x, enemy.y, enemy.xpReward);
     // XP feedback is private to the killer. Other players still see the orb in
@@ -1284,7 +1374,7 @@ export class World {
 
     if (enemy.type === 'slime' && Math.random() < 0.55) this.spawnPickup(room, 'herb', enemy.x, enemy.y, 1);
     if (enemy.type === 'goblin' && Math.random() < 0.22) this.spawnPickup(room, 'herb', enemy.x, enemy.y, 1);
-    if (enemy.type === 'goblin' && Math.random() < 0.25) this.spawnPickup(room, 'material', enemy.x, enemy.y, 1, null, 'ore');
+    if (enemy.type === 'goblin' && Math.random() < 0.48) this.spawnPickup(room, 'material', enemy.x, enemy.y, 1, null, 'ore');
     if (Math.random() < 0.08) this.spawnPickup(room, 'material', enemy.x, enemy.y, 1, null, 'essence');
     if (enemy.type !== 'boss' && Math.random() < 0.12) {
       const item = randomMobDropItem();
@@ -1305,6 +1395,7 @@ export class World {
       : [...room.players].filter(c => room.partyIds.has(c.accountId));
 
     const recipients = party.length ? party : (source ? [source] : []);
+    const guildGoals = this.db.guildRecordBossKill(recipients.map(client => client.accountId));
     const effects = ['flame', 'frost', 'void', 'thunder'];
     const effect = pick(effects);
 
@@ -1319,6 +1410,11 @@ export class World {
       );
 
       client.character.gold += 320;
+      const completedGuildGoal = guildGoals.find(goal => goal.completed && goal.accountIds.includes(client.accountId));
+      if (completedGuildGoal) {
+        client.character.gold += 150;
+        this.event(client, 'system', { text: 'Guild weekly raid goal complete! +150 gold.', color: '#c9a6ff' });
+      }
       client.character.bossDefeated = true;
       this.gainXp(client, 400, false);
       if (this.addItem(client, loot)) {
@@ -1327,6 +1423,11 @@ export class World {
         client.character.gold += 100;
       }
       this.sendCharacter(client);
+    }
+
+    for (const goal of guildGoals) {
+      const representative = goal.accountIds.find(accountId => recipients.some(client => client.accountId === accountId));
+      if (representative) this.broadcastGuildInfo(this.db.guildInfoForAccount(representative).members);
     }
 
     this.eventRoom(room, 'system', { text: 'The Cave Boss has fallen! Party rewards granted.', color: '#ffd75e' });
@@ -1530,7 +1631,7 @@ export class World {
     } else if (pickup.kind === 'herb') {
       materials.herb += pickup.amount;
       const quest = character.quest;
-      if (quest.active && !quest.claimed && quest.herbs < 5) {
+      if (quest.active && room && room.zoneId === 'forest' && quest.stage === 1 && quest.herbs < 5) {
         quest.herbs = Math.min(5, quest.herbs + pickup.amount);
         this.event(client, 'system', { text: `Herb ${quest.herbs}/5`, color: '#8ee46d' });
         this.checkQuestComplete(client);
@@ -1538,6 +1639,10 @@ export class World {
     } else if (pickup.kind === 'material') {
       const key = ['herb', 'ore', 'essence'].includes(pickup.material) ? pickup.material : 'ore';
       materials[key] += pickup.amount;
+      if (key === 'ore' && room && room.zoneId === 'cave' && character.quest.active && character.quest.stage === 2) {
+        character.quest.ore = Math.min(4, character.quest.ore + pickup.amount);
+        this.checkQuestComplete(client);
+      }
       this.event(client, 'system', { text: `+${pickup.amount} ${key}`, color: '#9ce7ff' });
     } else if (pickup.kind === 'item') {
       const item = normalizeItem(pickup.item);
@@ -1613,6 +1718,8 @@ export class World {
       case 'leaveDungeon': this.handleLeaveDungeon(client); break;
       case 'emote': this.handleEmote(client); break;
       case 'party': this.handleParty(client); break;
+      case 'partyLeave': this.handlePartyLeave(client); break;
+      case 'partyDisband': this.handlePartyDisband(client); break;
       case 'potion': this.consumePotion(client, null); break;
       case 'usePotion': this.consumePotion(client, message.uid); break;
       case 'chat': this.handleChat(client, message); break;
@@ -1672,6 +1779,14 @@ export class World {
     const target = this.resolveLockTarget(client, message);
     if (target) {
       client.aim = Math.atan2((target.y - 8) - (client.y - 10), target.x - client.x);
+    } else {
+      const aimX = Number(message && message.aimX);
+      const aimY = Number(message && message.aimY);
+      if (Number.isFinite(aimX) && Number.isFinite(aimY)) {
+        client.aim = Math.atan2(aimY - (client.y - 10), aimX - client.x);
+      } else if (Number.isFinite(Number(message && message.aim))) {
+        client.aim = Number(message.aim);
+      }
     }
     return target;
   }
@@ -1884,9 +1999,23 @@ export class World {
         client.y = ny;
         this.sfxRoom(room, 'blink');
       } else {
-        // Meteor lands on the locked mob when one is selected, otherwise ahead.
-        const tx = clamp(lockedTarget ? lockedTarget.x : ox + cos * 260, 40, room.w * TILE - 40);
-        const ty = clamp(lockedTarget ? lockedTarget.y - 8 : oy + sin * 260, 40, room.h * TILE - 40);
+        // Meteor lands on the locked mob or the explicit cursor target.
+        const requestedX = Number(message && message.aimX);
+        const requestedY = Number(message && message.aimY);
+        const hasTargetPoint = Number.isFinite(requestedX) && Number.isFinite(requestedY);
+        let targetX = lockedTarget ? lockedTarget.x : hasTargetPoint ? requestedX : ox + cos * 260;
+        let targetY = lockedTarget ? lockedTarget.y - 8 : hasTargetPoint ? requestedY : oy + sin * 260;
+        if (!lockedTarget) {
+          const dx = targetX - ox;
+          const dy = targetY - (oy - 8);
+          const length = Math.hypot(dx, dy);
+          if (length > 260) {
+            targetX = ox + dx / length * 260;
+            targetY = oy - 8 + dy / length * 260;
+          }
+        }
+        const tx = clamp(targetX, 40, room.w * TILE - 40);
+        const ty = clamp(targetY, 40, room.h * TILE - 40);
         fx.tx = tx;
         fx.ty = ty;
         this.scheduleMeteor(room, tx, ty, baseDamage * 2.2, client.id);
@@ -1932,12 +2061,16 @@ export class World {
     } else {
       const quest = client.character.quest;
       const status = quest.claimed
-        ? 'You have already completed my request.'
+        ? 'You have completed both requests. Thank you, hero!'
         : quest.complete
           ? 'You finished! Press the turn-in button for your reward.'
           : quest.active
-            ? `Progress: ${quest.kills}/10 slimes, ${quest.herbs}/5 herbs.`
-            : 'Kill 10 slimes and collect 5 herbs for me.';
+            ? quest.stage === 2
+              ? `Cave Patrol: ${quest.goblins}/8 goblins, ${quest.ore}/4 ore.`
+              : `Forest Cleanup: ${quest.kills}/10 slimes, ${quest.herbs}/5 herbs.`
+            : quest.stage === 2
+              ? 'The cave needs clearing. Defeat 8 goblins and bring me 4 ore.'
+              : 'The forest needs clearing. Defeat 10 slimes and bring me 5 herbs.';
       this.event(client, 'system', { text: `${npc.name}: ${status}`, color: '#ffd75e' });
     }
   }
@@ -2012,18 +2145,68 @@ export class World {
     for (const other of room.players) {
       if (other === client || !other.alive || !other.character) continue;
       if (client.party.has(other)) continue;
-      if (client.party.size >= 3 || other.party.size >= 3) continue;
       const d = dist(client, other);
       if (d < bestDistance) { best = other; bestDistance = d; }
     }
 
     if (!best) { this.error(client, 'No nearby player can join your party.'); return; }
-    client.party.add(best);
-    best.party.add(client);
-    this.event(client, 'party', { text: `${best.character.name} joined your party!` });
-    this.event(best, 'party', { text: `${client.character.name} invited you to a party!` });
-    this.sfx(client, 'pickup');
-    this.sfx(best, 'pickup');
+    const members = new Set([client, ...client.party, best, ...best.party]);
+    if (members.size > 4) {
+      this.error(client, 'Your party is full (4 players maximum).');
+      return;
+    }
+
+    const leaderId = client.partyLeaderId || best.partyLeaderId || client.id;
+    const leader = [...members].find(member => String(member.id) === String(leaderId)) || client;
+    // Keep every party member linked to every other member. This makes the
+    // HUD and private raid roster agree even when a member invites someone.
+    for (const member of members) {
+      member.party = new Set([...members].filter(other => other !== member));
+      member.partyLeaderId = leader.id;
+    }
+    for (const member of members) {
+      this.event(member, 'party', { text: `${best.character.name} joined the party. ${leader.character.name} is the leader.` });
+      this.sfx(member, 'pickup');
+    }
+  }
+
+  removePartyMember(client, notify = true) {
+    const members = [...(client.party || [])];
+    const oldLeaderId = client.partyLeaderId;
+    client.party?.clear();
+    client.partyLeaderId = null;
+    if (!members.length) return false;
+
+    const remainingLeader = members.find(member => String(member.id) === String(oldLeaderId)) || members[0];
+    for (const member of members) {
+      member.party = new Set(members.filter(other => other !== member));
+      member.partyLeaderId = remainingLeader.id;
+      const message = String(oldLeaderId) === String(client.id)
+        ? `${client.character?.name || 'A player'} left. ${remainingLeader.character?.name || 'A player'} is the new leader.`
+        : `${client.character?.name || 'A player'} left the party.`;
+      this.event(member, 'party', { text: message });
+    }
+    if (notify) this.event(client, 'party', { text: 'You left the party.' });
+    return true;
+  }
+
+  handlePartyLeave(client) {
+    if (!this.removePartyMember(client)) this.error(client, 'You are not in a party.');
+  }
+
+  handlePartyDisband(client) {
+    if (!client.party.size) { this.error(client, 'You are not in a party.'); return; }
+    if (String(client.partyLeaderId) !== String(client.id)) {
+      this.error(client, 'Only the party leader can disband the party.');
+      return;
+    }
+
+    const members = [client, ...client.party];
+    for (const member of members) {
+      member.party.clear();
+      member.partyLeaderId = null;
+      this.event(member, 'party', { text: `${client.character.name} disbanded the party.` });
+    }
   }
 
   // ---------- Potions, equipment and progression ----------
@@ -2164,10 +2347,12 @@ export class World {
 
   handleQuestAccept(client) {
     const quest = client.character.quest;
-    if (quest.claimed) { this.error(client, 'This quest is already complete.'); return; }
+    if (quest.claimed) { this.error(client, 'You have completed both requests.'); return; }
     if (quest.complete) { this.handleQuestTurnIn(client); return; }
     quest.active = true;
-    this.event(client, 'quest', { text: 'Quest accepted: kill 10 slimes and collect 5 herbs.' });
+    this.event(client, 'quest', { text: quest.stage === 2
+      ? 'Cave Patrol accepted: defeat 8 goblins and collect 4 ore.'
+      : 'Forest Cleanup accepted: defeat 10 slimes and collect 5 herbs.' });
     this.sfx(client, 'ui');
     this.sendCharacter(client);
   }
@@ -2175,6 +2360,20 @@ export class World {
   handleQuestTurnIn(client) {
     const quest = client.character.quest;
     if (!quest.complete || quest.claimed) { this.error(client, 'The quest is not ready to turn in.'); return; }
+
+    if (quest.stage === 1) {
+      quest.stage = 2;
+      quest.active = false;
+      quest.complete = false;
+      quest.kills = 0;
+      quest.herbs = 0;
+      client.character.gold += 100;
+      this.gainXp(client, 180, false);
+      this.event(client, 'quest', { text: 'Forest Cleanup complete! +100 gold, +180 XP. Cave Patrol unlocked.' });
+      this.sfx(client, 'level');
+      this.sendCharacter(client);
+      return;
+    }
 
     quest.claimed = true;
     quest.active = false;
@@ -2190,7 +2389,7 @@ export class World {
       client.character.gold += 60;
     }
 
-    this.event(client, 'quest', { text: 'Quest turned in! +140 gold, +260 XP, epic reward.' });
+    this.event(client, 'quest', { text: 'Cave Patrol complete! +140 gold, +260 XP, epic reward.' });
     this.sfx(client, 'level');
     this.sendCharacter(client);
   }
