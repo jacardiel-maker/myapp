@@ -28,6 +28,7 @@
   const ROLE_SPRITE_SCALE = 3;
   const SAVE_KEY = 'pixelRealmSave_v1';
   const TUTORIAL_KEY = 'pixelRealmTutorialComplete';
+  const SESSION_KEY = 'pixelRealmSession';
   const DAY_LENGTH = 120;   // Seconds for a full day/night cycle.
   const TAU = Math.PI * 2;
 
@@ -3960,6 +3961,7 @@
         this.connected = true;
         this.connecting = false;
         this.game.log('Connected to game server.', '#8ee6ff');
+        this.game.onNetworkConnected();
       });
       this.socket.addEventListener('message', e => {
         try { this.game.onNetworkMessage(JSON.parse(e.data)); }
@@ -3969,7 +3971,7 @@
         this.connected = false;
         this.connecting = false;
         this.online = false;
-        this.game.log('Disconnected from game server.', '#ff9b9b');
+        this.game.onNetworkDisconnected();
       });
       this.socket.addEventListener('error', () => {
         this.game.log(`Cannot reach game server: ${this.url}`, '#ff9b9b');
@@ -4006,6 +4008,9 @@
       this.loginReturnState = 'select';
       this.network = new NetworkClient(this);
       this.networkData = { auction: [], mail: [], guild: null, shop: [] };
+      this.session = this._readSession();
+      this._pendingLogin = null;
+      this._connectTimer = null;
       this.selectedItemUid = null;
       this.actionText = '';
       this.actionGold = '';
@@ -5180,6 +5185,11 @@
           net.token = msg.token || '';
           net.online = true;
           net.joined = false;
+          // Save session so returning players auto-login next time
+          if (this._pendingLogin) {
+            this._saveSession(this._pendingLogin.username, this._pendingLogin.password);
+            this._pendingLogin = null;
+          }
           this.applyCharacter(msg.character || msg.char, true);
           net.send({ type: 'join' });
           break;
@@ -5263,6 +5273,13 @@
         case 'error':
           this.log(msg.message || msg.text || 'Server error.', '#ff9b9b');
           this.audio.sfx('hurt');
+          // If auto-login failed (stale session), clear it and fall back
+          if (this._pendingLogin && this.state === 'connecting') {
+            this._clearSession();
+            this._pendingLogin = null;
+            this.state = 'select';
+            this.log('Session expired. Please choose a name and try again.', '#ffd75e');
+          }
           break;
         case 'pong':
           break;
@@ -5539,6 +5556,130 @@
       this.network.send({ type: kind, username, password, classId: this.selectedClass });
     }
 
+    // ============================================================
+    // UNIFIED REALM – seamless auto-connect flow
+    // ============================================================
+
+    _readSession() {
+      try {
+        const raw = localStorage.getItem(SESSION_KEY);
+        if (!raw) return null;
+        const data = JSON.parse(raw);
+        return data && data.username ? data : null;
+      } catch { return null; }
+    }
+
+    _saveSession(username, password) {
+      try {
+        localStorage.setItem(SESSION_KEY, JSON.stringify({ username, password }));
+        this.session = { username, password };
+      } catch {}
+    }
+
+    _clearSession() {
+      try { localStorage.removeItem(SESSION_KEY); } catch {}
+      this.session = null;
+    }
+
+    _generatePassword() {
+      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+      let pw = '';
+      for (let i = 0; i < 20; i++) pw += chars[Math.floor(Math.random() * chars.length)];
+      return pw;
+    }
+
+    // The single entry-point: class selected, name entered, hit PLAY.
+    enterRealm() {
+      this.audio.unlock();
+      this.audio.setVolume(this.settings.volume);
+
+      const session = this.session || this._readSession();
+      const name = (this.nameInput || '').trim() || 'Hero';
+
+      if (session) {
+        // Returning player – auto-login with saved credentials
+        this._pendingLogin = {
+          username: session.username,
+          password: session.password,
+          classId: this.selectedClass,
+          isReturning: true
+        };
+      } else {
+        // New player – auto-register with the name they typed
+        const password = this._generatePassword();
+        this._pendingLogin = {
+          username: name,
+          password,
+          classId: this.selectedClass,
+          isReturning: false
+        };
+      }
+
+      this.state = 'connecting';
+      this.network.connect();
+
+      // If already connected (socket reused), fire immediately
+      if (this.network.connected) {
+        this.onNetworkConnected();
+        return;
+      }
+
+      // Fallback: if the server is unreachable after 5 seconds, start offline
+      if (this._connectTimer) clearTimeout(this._connectTimer);
+      this._connectTimer = setTimeout(() => {
+        this._connectTimer = null;
+        if (this.state === 'connecting') {
+          this._pendingLogin = null;
+          this._startOffline();
+        }
+      }, 5000);
+    }
+
+    onNetworkConnected() {
+      if (this._connectTimer) { clearTimeout(this._connectTimer); this._connectTimer = null; }
+
+      if (this._pendingLogin) {
+        // Send auto-auth (server tries login first, then register)
+        const p = this._pendingLogin;
+        this.network.send({ type: 'auto', username: p.username, password: p.password, classId: p.classId });
+      }
+    }
+
+    onNetworkDisconnected() {
+      if (this.state === 'connecting') {
+        // Connection dropped while trying to enter – fall back to offline
+        this._pendingLogin = null;
+        this._startOffline();
+        return;
+      }
+      this.log('Disconnected from game server.', '#ff9b9b');
+    }
+
+    _startOffline() {
+      this.log('⚠ Server unreachable – starting offline mode.', '#ffd75e');
+      const spawn = ZONE_SPAWN.village;
+      const name = (this.nameInput || '').trim() || 'Hero';
+      this.player = new Player(this.selectedClass, name, spawn.x, spawn.y);
+      this.pet = new Pet(spawn.x + 24, spawn.y + 18);
+      this.quest = freshQuest();
+      this.bossDefeated = false;
+      this.zoneId = 'village';
+      this.zone = this.zones.village;
+      this.party = [];
+      this.shopStock = makeShopStock(this.selectedClass);
+      this.lockedTargetId = null;
+      this.resetZoneActors();
+      this.clearInput();
+      this.state = 'playing';
+      this.paused = false;
+      this.panel = null;
+      this.chatOpen = false;
+      this.dayTime = 20;
+      this.log(`Welcome, ${name}! (Offline Mode – connect to server for multiplayer)`, '#8ee6ff');
+      this.save();
+      this.startTutorialIfNeeded();
+    }
+
     // Return from online play to the offline title without leaving a half-online state.
     leaveOnline() {
       if (this.network.online) this.network.send({ type: 'save' });
@@ -5622,28 +5763,8 @@
     }
 
     startNewGame() {
-      this.audio.unlock();
-      this.audio.setVolume(this.settings.volume);
-      const spawn = ZONE_SPAWN.village;
-      this.player = new Player(this.selectedClass, this.nameInput, spawn.x, spawn.y);
-      this.pet = new Pet(spawn.x + 24, spawn.y + 18);
-      this.quest = freshQuest();
-      this.bossDefeated = false;
-      this.zoneId = 'village';
-      this.zone = this.zones.village;
-      this.party = [];
-      this.shopStock = makeShopStock(this.player.classId);
-      this.lockedTargetId = null;
-      this.resetZoneActors();
-      this.clearInput();
-      this.state = 'playing';
-      this.paused = false;
-      this.panel = null;
-      this.chatOpen = false;
-      this.dayTime = 20;
-      this.log(`Welcome, ${this.player.name}! Press I for inventory, F near NPCs.`, '#8ee6ff');
-      this.save();
-      this.startTutorialIfNeeded();
+      // Unified flow: always try to enter the shared online realm first.
+      this.enterRealm();
     }
 
     readSave() {
@@ -6453,6 +6574,10 @@
           this.syncNativeTextInputOverlay(true);
           break;
         case 'openLogin': this.openLogin(); break;
+        case 'switchAccount':
+          this._clearSession();
+          this.openLogin();
+          break;
         case 'loginBack': this.state = this.loginReturnState; break;
         case 'loginUser':
           this.loginFields.active = 'username';
@@ -6766,6 +6891,10 @@
       if (this.state === 'select') {
         this.drawSelectScreen();
         this.drawDraggedItem();
+        return;
+      }
+      if (this.state === 'connecting') {
+        this.drawConnectingScreen();
         return;
       }
       if (this.state === 'login') {
@@ -7631,7 +7760,7 @@
           'Server offline. Deploy the Node server and connect with ?ws=wss://your-server/ws', VIEW_W / 2, 450);
       ctx.fillStyle = '#7f8ca5';
       ctx.font = '10px monospace';
-      ctx.fillText('Offline mode still works: press Esc or BACK, then START.', VIEW_W / 2, 476);
+      ctx.fillText('Go back and press PLAY – it auto-connects, or starts offline if unavailable.', VIEW_W / 2, 476);
     }
 
     drawIntroScreen() {
@@ -7836,6 +7965,7 @@
       });
 
       // On-canvas name input: typing works without any HTML input element.
+      const session = this.session;
       const nx = 278;
       const ny = 452;
       const nw = 220;
@@ -7843,27 +7973,83 @@
       ctx.textAlign = 'left';
       ctx.font = '12px monospace';
       ctx.fillStyle = '#c8d3ea';
-      ctx.fillText('Name:', nx - 52, ny + 22);
-      ctx.fillStyle = '#0c1220';
-      ctx.fillRect(nx, ny, nw, nh);
-      ctx.strokeStyle = this.nameFocused ? '#ffd75e' : '#7d89a8';
-      ctx.lineWidth = this.nameFocused ? 2 : 1;
-      ctx.strokeRect(nx + 0.5, ny + 0.5, nw - 1, nh - 1);
-      ctx.fillStyle = '#fff';
-      const caret = this.nameFocused && Math.floor(this.time * 2) % 2 ? '_' : '';
-      ctx.fillText(this.nameInput + caret, nx + 8, ny + 22);
-      this.clickRegions.push({ x: nx, y: ny, w: nw, h: nh, action: 'focusName' });
-
-      this.button(516, 452, 132, 34, 'START', 'start', { color: '#3f7d55', border: '#8ee6a8' });
-      if (this.saveData) {
-        const label = `CONTINUE Lv${this.saveData.level || 1}`;
-        this.button(660, 452, 168, 34, label, 'continue', { color: '#5b4b8c', border: '#c9a6ff' });
+      ctx.fillText(session ? 'Account:' : 'Name:', nx - (session ? 68 : 52), ny + 22);
+      if (session) {
+        // Returning player – show saved name (read-only)
+        ctx.fillStyle = '#1a2238';
+        ctx.fillRect(nx, ny, nw, nh);
+        ctx.strokeStyle = '#58668a';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(nx + 0.5, ny + 0.5, nw - 1, nh - 1);
+        ctx.fillStyle = '#8ee6ff';
+        ctx.fillText(session.username, nx + 8, ny + 22);
+      } else {
+        // New player – editable name field
+        ctx.fillStyle = '#0c1220';
+        ctx.fillRect(nx, ny, nw, nh);
+        ctx.strokeStyle = this.nameFocused ? '#ffd75e' : '#7d89a8';
+        ctx.lineWidth = this.nameFocused ? 2 : 1;
+        ctx.strokeRect(nx + 0.5, ny + 0.5, nw - 1, nh - 1);
+        ctx.fillStyle = '#fff';
+        const caret = this.nameFocused && Math.floor(this.time * 2) % 2 ? '_' : '';
+        ctx.fillText(this.nameInput + caret, nx + 8, ny + 22);
+        this.clickRegions.push({ x: nx, y: ny, w: nw, h: nh, action: 'focusName' });
       }
-      this.button(836, 452, 108, 34, 'ONLINE (O)', 'openLogin', { color: '#2f5f8c', border: '#8ee6ff' });
+
+      // Single unified PLAY button
+      const playLabel = session ? '⚔ ENTER REALM' : '⚔ PLAY';
+      this.button(516, 452, 180, 34, playLabel, 'start', { color: '#3f7d55', border: '#8ee6a8', fontSize: 13 });
+
+      // Switch Account button (smaller, for returning players or manual login)
+      if (session) {
+        this.button(710, 452, 140, 34, 'SWITCH ACCT (O)', 'switchAccount', { color: '#34405c', border: '#7d89a8', fontSize: 9 });
+      } else {
+        this.button(710, 452, 140, 34, 'LOGIN (O)', 'openLogin', { color: '#2f5f8c', border: '#8ee6ff', fontSize: 9 });
+      }
+
       ctx.textAlign = 'center';
       ctx.font = '10px monospace';
       ctx.fillStyle = '#7f8ca5';
-      ctx.fillText('Offline: START / C to continue. Online: press O to log in and play on the Node server.', VIEW_W / 2, 516);
+      if (session) {
+        ctx.fillText(`Welcome back! Press ENTER REALM to rejoin the shared world.`, VIEW_W / 2, 510);
+        ctx.fillStyle = '#58668a';
+        ctx.fillText('Switch Account clears your saved session. Your hero stays safe on the server.', VIEW_W / 2, 526);
+      } else {
+        ctx.fillText('Pick a class, name your hero, and press PLAY to enter the shared online realm!', VIEW_W / 2, 516);
+      }
+    }
+
+    drawConnectingScreen() {
+      const ctx = this.ctx;
+      const grad = ctx.createLinearGradient(0, 0, 0, VIEW_H);
+      grad.addColorStop(0, '#151c33');
+      grad.addColorStop(1, '#24182f');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+
+      // Animated dots
+      const dots = '.'.repeat(1 + Math.floor(this.time * 2) % 3);
+
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#ffd75e';
+      ctx.font = 'bold 28px monospace';
+      ctx.fillText('ENTERING REALM' + dots, VIEW_W / 2, VIEW_H / 2 - 20);
+
+      ctx.fillStyle = '#8ee6ff';
+      ctx.font = '14px monospace';
+      ctx.fillText('Connecting to the shared world server', VIEW_W / 2, VIEW_H / 2 + 20);
+
+      // Pulsing ring animation
+      const pulse = (Math.sin(this.time * 4) + 1) * 0.5;
+      ctx.strokeStyle = `rgba(142, 230, 255, ${0.3 + pulse * 0.4})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(VIEW_W / 2, VIEW_H / 2 + 60, 12 + pulse * 8, 0, TAU);
+      ctx.stroke();
+
+      ctx.fillStyle = '#58668a';
+      ctx.font = '10px monospace';
+      ctx.fillText('If this takes too long, offline mode will start automatically.', VIEW_W / 2, VIEW_H - 40);
     }
 
     drawInventoryPanel() {

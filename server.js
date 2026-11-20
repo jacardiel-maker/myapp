@@ -134,8 +134,8 @@ attachWebSocket({
 
       const type = String(message.type || '');
 
-      // Register and login are the only messages allowed before authentication.
-      if (type === 'register' || type === 'login') {
+      // Register, login and auto are the only messages allowed before authentication.
+      if (type === 'register' || type === 'login' || type === 'auto') {
         authenticate(client, message, type);
         return;
       }
@@ -160,9 +160,30 @@ attachWebSocket({
 
 function authenticate(client, message, mode) {
   try {
-    const account = mode === 'register'
-      ? db.createAccount(message.username, message.password)
-      : db.login(message.username, message.password);
+    let account;
+    if (mode === 'auto') {
+      let username = String(message.username || '').trim().slice(0, 24);
+      if (username.length < 3) username = username ? (username + '_adventurer').slice(0, 16) : 'Hero';
+      let password = String(message.password || '');
+      if (password.length < 4) password = 'pr_' + password + '_realm';
+
+      const existing = db.findAccountByUsername(username);
+      if (existing) {
+        try {
+          account = db.login(username, password);
+        } catch {
+          // If username exists with a different password, make a unique suffix
+          const altName = `${username.slice(0, 10)}_${Math.floor(100 + Math.random() * 900)}`;
+          account = db.createAccount(altName, password);
+        }
+      } else {
+        account = db.createAccount(username, password);
+      }
+    } else if (mode === 'register') {
+      account = db.createAccount(message.username, message.password);
+    } else {
+      account = db.login(message.username, message.password);
+    }
 
     let character = db.getCharacter(account.id);
     if (!character) {
@@ -189,7 +210,7 @@ function authenticate(client, message, mode) {
 
     // auth { token, character } — the browser keeps the token for later messages.
     world.send(client, { type: 'auth', token, character });
-    world.system(client, mode === 'register' ? 'Account created. Send join to enter the world.' : 'Welcome back! Send join to enter the world.', '#8ee6ff');
+    world.system(client, mode === 'login' ? 'Welcome back! Send join to enter the world.' : 'Welcome to Pixel Realm! You are in the shared online world.', '#8ee6ff');
     console.log(`[server] ${mode}: ${account.username}`);
   } catch (err) {
     world.error(client, err.message);
