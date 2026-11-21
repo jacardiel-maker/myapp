@@ -51,31 +51,31 @@ export const CLASS_DATA = {
 
 export const SKILLS = {
   swordsman: [
-    { name: 'Dash Strike', cost: 15, cd: 5, range: 95, damageMult: 1.4, desc: 'Dash forward and slash through all enemies.' },
+    { name: 'Dash Strike', cost: 15, cd: 5, range: 95, damageMult: 1.7, desc: 'Dash forward and slash through all enemies.' },
     { name: 'Shield Block', cost: 10, cd: 8, range: 0, damageMult: 0, buff: 'shield', duration: 3, desc: 'Block 80% incoming damage for 3 seconds.' },
-    { name: 'Whirlwind', cost: 25, cd: 9, range: 75, damageMult: 2.2, desc: 'Spin rapidly, hitting all surrounding targets.' },
-    { name: 'Seismic Slam', cost: 32, cd: 12, range: 110, damageMult: 2.8, slow: 0.5, desc: 'Shatter the ground, dealing heavy damage and slowing.' }
+    { name: 'Whirlwind', cost: 25, cd: 9, range: 75, damageMult: 1.4, desc: 'Spin rapidly, hitting all surrounding targets.' },
+    { name: 'Seismic Slam', cost: 32, cd: 12, range: 110, damageMult: 1.6, slow: 0.5, desc: 'Shatter the ground, dealing heavy damage and slowing.' }
   ],
   archer: [
-    { name: 'Multi-Shot', cost: 18, cd: 5, range: 260, damageMult: 0.9, projectiles: 3, desc: 'Fire three arrows in an arc.' },
+    { name: 'Multi-Shot', cost: 18, cd: 5, range: 260, damageMult: 0.75, projectiles: 3, desc: 'Fire three arrows in an arc.' },
     { name: 'Roll Dodge', cost: 12, cd: 6, range: 120, damageMult: 0, buff: 'invuln', duration: 0.4, desc: 'Tumble swiftly, evading all attacks.' },
-    { name: 'Poison Arrow', cost: 20, cd: 8, range: 280, damageMult: 1.2, dot: { damage: 8, duration: 4 }, desc: 'Infect the target with deadly toxin.' },
-    { name: 'Arrow Rain', cost: 30, cd: 10, range: 300, damageMult: 2.5, aoe: 90, desc: 'Hail of piercing arrows in the targeted area.' }
+    { name: 'Poison Arrow', cost: 20, cd: 8, range: 280, damageMult: 0.9, dot: { damage: 8, duration: 4 }, desc: 'Infect the target with deadly toxin.' },
+    { name: 'Arrow Rain', cost: 30, cd: 10, range: 300, damageMult: 1.5, aoe: 90, desc: 'Hail of piercing arrows in the targeted area.' }
   ],
   mage: [
-    { name: 'Ice Nova', cost: 25, cd: 8, range: 85, damageMult: 1.6, slow: 0.4, desc: 'Blast frost outward, freezing and slowing enemies.' },
+    { name: 'Ice Nova', cost: 25, cd: 8, range: 85, damageMult: 0.85, slow: 0.4, desc: 'Blast frost outward, freezing and slowing enemies.' },
     { name: 'Blink', cost: 18, cd: 6, range: 180, damageMult: 0, teleport: true, desc: 'Instantaneous teleportation toward cursor.' },
-    { name: 'Meteor', cost: 40, cd: 12, range: 240, damageMult: 3.2, aoe: 100, desc: 'Summon a colossal flaming meteor from the sky.' },
-    { name: 'Arcane Burst', cost: 32, cd: 9, range: 160, damageMult: 2.0, desc: 'Detonate concentrated arcane energy.' }
+    { name: 'Meteor', cost: 40, cd: 12, range: 240, damageMult: 2.6, aoe: 100, desc: 'Summon a colossal flaming meteor from the sky.' },
+    { name: 'Arcane Burst', cost: 32, cd: 9, range: 160, damageMult: 1.8, desc: 'Detonate concentrated arcane energy.' }
   ],
   cleric: [
-    { name: 'Holy Smite', cost: 18, cd: 5, range: 150, damageMult: 1.5, desc: 'Call down a pillar of holy light to strike the enemy.' },
+    { name: 'Holy Smite', cost: 18, cd: 5, range: 150, damageMult: 1.7, desc: 'Call down a pillar of holy light to strike the enemy.' },
     { name: 'Divine Heal', cost: 28, cd: 7, range: 180, healSelf: 65, healParty: 45, desc: 'Heal yourself and all nearby party members.' },
     { name: 'Aegis Ward', cost: 22, cd: 10, range: 0, buff: 'ward', duration: 4, desc: 'Grant a barrier absorbing damage and granting defense.' },
     { name: 'Radiant Nova', cost: 38, cd: 11, range: 120, damageMult: 2.2, healParty: 35, desc: 'Release an explosion of holy light that harms foes and heals allies.' }
   ],
   rogue: [
-    { name: 'Shadow Strike', cost: 16, cd: 4, range: 110, damageMult: 1.8, critBonus: 0.25, desc: 'Lunge behind the target with a brutal stab.' },
+    { name: 'Shadow Strike', cost: 16, cd: 4, range: 110, damageMult: 2.7, critBonus: 0.25, desc: 'Lunge behind the target with a brutal stab.' },
     { name: 'Smoke Bomb', cost: 20, cd: 9, range: 0, buff: 'stealth', duration: 2.5, desc: 'Drop smoke, becoming invisible and gaining +30% movement speed.' },
     { name: 'Poison Dart', cost: 18, cd: 6, range: 220, damageMult: 1.0, dot: { damage: 10, duration: 5 }, desc: 'Throw a toxic dart that continuously drains enemy life.' },
     { name: 'Eviscerate', cost: 35, cd: 10, range: 70, damageMult: 3.0, critBonus: 0.35, desc: 'Vicious execution dealing catastrophic damage to wounded foes.' }

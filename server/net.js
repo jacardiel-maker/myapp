@@ -103,6 +103,12 @@ function makeSocketWrapper(socket, maxPayload) {
     // Send either a string or any JSON-serialisable object.
     send(data) {
       if (closed || socket.destroyed) return;
+      // A client that cannot keep up should not make the process buffer state
+      // packets forever. Close it instead of growing memory without a limit.
+      if (socket.writableLength > maxPayload * 4) {
+        ws.close(1009, 'Slow consumer');
+        return;
+      }
       let text;
       try {
         text = typeof data === 'string' ? data : JSON.stringify(data);
@@ -111,6 +117,17 @@ function makeSocketWrapper(socket, maxPayload) {
         return;
       }
       sendFrame(0x1, Buffer.from(text, 'utf8'));
+    },
+
+    // WebSocket ping control frame. Browsers answer automatically with pong,
+    // which the parser below uses to mark the connection alive.
+    ping(data = '') {
+      if (closed || socket.destroyed) return;
+      if (socket.writableLength > maxPayload * 4) {
+        ws.close(1009, 'Slow consumer');
+        return;
+      }
+      sendFrame(0x9, Buffer.from(String(data), 'utf8').subarray(0, 125));
     },
 
     // Politely close the connection with a WebSocket close frame.
@@ -180,6 +197,7 @@ function makeSocketWrapper(socket, maxPayload) {
 
   socket.on('data', (chunk) => {
     if (closed) return;
+    ws.alive = true;
     buffer = Buffer.concat([buffer, chunk]);
 
     // A runaway client should not be able to grow our memory forever.

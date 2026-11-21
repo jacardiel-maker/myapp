@@ -108,6 +108,6 @@ export function claimDailyReward(character, questId) {
 
   q.claimed = true;
   character.gold = (Number(character.gold) || 0) + (q.reward.gold || 0);
-  character.xp = (Number(character.xp) || 0) + (q.reward.xp || 0);
+  // XP is granted by World.gainXp so level-ups and pet XP are processed.
   return { success: true, reward: q.reward };
 }

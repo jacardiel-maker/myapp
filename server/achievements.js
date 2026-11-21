@@ -80,7 +80,7 @@ export function claimAchievementReward(character, achId) {
 
   data.claimed.push(achId);
   character.gold = (Number(character.gold) || 0) + (ach.reward.gold || 0);
-  character.xp = (Number(character.xp) || 0) + (ach.reward.xp || 0);
+  // XP is granted by World.gainXp so level-ups and pet XP are processed.
   if (ach.reward.title) {
     character.title = ach.reward.title;
   }

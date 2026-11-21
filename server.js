@@ -21,22 +21,13 @@ import { attachWebSocket } from './server/net.js';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT) || 3000;
 
-const MIME_TYPES = new Map([
-  ['.html', 'text/html; charset=utf-8'],
-  ['.css', 'text/css; charset=utf-8'],
-  ['.js', 'text/javascript; charset=utf-8'],
-  ['.mjs', 'text/javascript; charset=utf-8'],
-  ['.json', 'application/json; charset=utf-8'],
-  ['.png', 'image/png'],
-  ['.jpg', 'image/jpeg'],
-  ['.svg', 'image/svg+xml'],
-  ['.ico', 'image/x-icon']
-]);
-
+// Only these files are public. Serving arbitrary paths would expose server
+// source, the SQLite database, and deployment notes to anyone on the internet.
 const STATIC_FILES = new Map([
   ['/index.html', { file: path.join(HERE, 'index.html'), type: 'text/html; charset=utf-8' }],
   ['/style.css', { file: path.join(HERE, 'style.css'), type: 'text/css; charset=utf-8' }],
-  ['/game.js', { file: path.join(HERE, 'game.js'), type: 'text/javascript; charset=utf-8' }]
+  ['/game.js', { file: path.join(HERE, 'game.js'), type: 'text/javascript; charset=utf-8' }],
+  ['/assets/forest-campsite.svg', { file: path.join(HERE, 'assets', 'forest-campsite.svg'), type: 'image/svg+xml' }]
 ]);
 
 const db = new GameDB();
@@ -70,15 +61,8 @@ const server = http.createServer((req, res) => {
     targetFile = entry.file;
     targetType = entry.type;
   } else {
-    // Check if the requested file exists in the safe root directory
-    const ext = path.extname(pathname).toLowerCase();
-    if (MIME_TYPES.has(ext)) {
-      const safePath = path.normalize(path.join(HERE, pathname));
-      if (safePath.startsWith(HERE)) {
-        targetFile = safePath;
-        targetType = MIME_TYPES.get(ext);
-      }
-    }
+    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Not found');
+    return;
   }
 
   if (!targetFile) {
@@ -134,8 +118,10 @@ attachWebSocket({
 
       const type = String(message.type || '');
 
-      // Register, login and auto are the only messages allowed before authentication.
+      // Register, login and auto are only valid before authentication. Re-authing
+      // on a live socket used to replace the character while keeping room state.
       if (type === 'register' || type === 'login' || type === 'auto') {
+        if (client.token) { world.error(client, 'Already logged in. Reconnect to switch accounts.'); return; }
         authenticate(client, message, type);
         return;
       }
@@ -224,12 +210,29 @@ const saveTimer = setInterval(() => {
   world.saveAll();
 }, 10000);
 
+// Detect half-open sockets ( Wi-Fi drops, sleep, dead tabs ) that never send a
+// close frame. `ws.alive` is refreshed whenever data or a pong arrives.
+const heartbeatTimer = setInterval(() => {
+  for (const client of world.clients) {
+    const ws = client.ws;
+    if (!ws || ws.closed) continue;
+    if (ws.alive === false) {
+      ws.destroy();
+      continue;
+    }
+    ws.alive = false;
+    ws.ping();
+  }
+}, 25000);
+heartbeatTimer.unref();
+
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`Pixel Realm server listening on port ${PORT} (WebSocket: /ws)`);
 });
 
 function shutdown() {
   clearInterval(saveTimer);
+  clearInterval(heartbeatTimer);
   world.stop();
   world.saveAll();
   server.close(() => {

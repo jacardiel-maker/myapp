@@ -13,11 +13,12 @@ export class TradeManager {
     this.world = world;
     this.sessions = new Map(); // sessionId -> session
     this.playerToSession = new Map(); // client.id -> sessionId
+    this.invites = new Map(); // target client id -> { fromId, expires }
     this.nextSessionId = 1;
   }
 
   requestTrade(fromClient, targetName) {
-    if (!fromClient.character) return;
+    if (!fromClient.character || typeof targetName !== 'string') return;
     const targetClient = [...this.world.clients].find(c =>
       c.character && (c.character.name.toLowerCase() === targetName.toLowerCase() ||
                       c.character.username?.toLowerCase() === targetName.toLowerCase())
@@ -40,6 +41,7 @@ export class TradeManager {
       return;
     }
 
+    this.invites.set(targetClient.id, { fromId: fromClient.id, expires: Date.now() + 60000 });
     this.world.system(targetClient, `${fromClient.character.name} wants to trade with you! Type /trade accept or click Accept in the Trade prompt.`, '#ffd75e');
     this.world.send(targetClient, {
       type: 'trade_invite',
@@ -50,7 +52,13 @@ export class TradeManager {
   }
 
   acceptTrade(client, fromId) {
-    const partner = [...this.world.clients].find(c => c.id === fromId && c.character);
+    const invite = this.invites.get(client.id);
+    this.invites.delete(client.id);
+    if (!invite || String(invite.fromId) !== String(fromId) || invite.expires < Date.now()) {
+      this.world.error(client, 'No pending trade invitation from that player.');
+      return;
+    }
+    const partner = [...this.world.clients].find(c => String(c.id) === String(fromId) && c.character);
     if (!partner) {
       this.world.error(client, 'Trade partner is no longer online.');
       return;
@@ -79,8 +87,20 @@ export class TradeManager {
     if (!s) return;
     const side = s.p1.client.id === client.id ? s.p1 : s.p2;
 
-    // Any changes reset the lock and confirmation
-    side.items = Array.isArray(items) ? items.slice(0, 4) : [];
+    // Resolve client-supplied uids to the real server-side items. Storing the
+    // message objects verbatim allowed forged stats and duplicate-item tricks.
+    const inventory = Array.isArray(client.character.inventory) ? client.character.inventory : [];
+    const seen = new Set();
+    side.items = Array.isArray(items) ? items.reduce((resolved, offered) => {
+      const uid = offered && offered.uid;
+      if (resolved.length >= 4 || uid === undefined || uid === null || seen.has(uid)) return resolved;
+      const realItem = inventory.find(item => item && item.uid === uid);
+      if (realItem) {
+        seen.add(uid);
+        resolved.push(realItem);
+      }
+      return resolved;
+    }, []) : [];
     side.gold = Math.max(0, Math.min(Number(client.character.gold) || 0, Math.floor(Number(gold) || 0)));
     side.locked = false;
     side.accepted = false;
@@ -212,5 +232,9 @@ export class TradeManager {
 
   handleDisconnect(client) {
     this.cancelTrade(client);
+    this.invites.delete(client.id);
+    for (const [targetId, invite] of this.invites) {
+      if (String(invite.fromId) === String(client.id)) this.invites.delete(targetId);
+    }
   }
 }

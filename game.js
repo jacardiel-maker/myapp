@@ -38,6 +38,7 @@
     SWAMP_WATER: 14, BOG: 15, ARENA_FLOOR: 16
   };
   const VALID_EQUIP_SLOTS = ['weapon', 'armor', 'helmet', 'boots', 'ring', 'necklace'];
+  const ALL_ITEM_SLOTS = [...VALID_EQUIP_SLOTS, 'consumable', 'material', 'pet_collar', 'pet_charm'];
   // Trees, water, cacti, cave walls and village buildings are real obstacles.
   const BLOCKED_TILES = new Set([
     TILE_ID.WATER, TILE_ID.TREE, TILE_ID.ROCK, TILE_ID.CACTUS,
@@ -47,33 +48,33 @@
 
   const CLASS_DATA = {
     swordsman: {
-      name: 'Swordsman', maxHp: 145, attack: 18, speed: 108, range: 54,
-      mana: 60, manaRegen: 7, defense: 4, color: '#8fd0ff',
-      blurb: 'High HP. Melee swings and sturdy skills.'
+      name: 'Swordsman', maxHp: 150, attack: 18, speed: 108, range: 54,
+      mana: 60, manaRegen: 7, defense: 4, color: '#8fd0ff', hpGrowth: 14,
+      blurb: 'High HP. Melee swings, gap closers, and resilient defenses.'
     },
     archer: {
       name: 'Archer', maxHp: 95, attack: 14, speed: 142, range: 285,
-      mana: 80, manaRegen: 9, defense: 1, color: '#84e39a',
-      blurb: 'Fast and long ranged. Kites enemies with arrows.'
+      mana: 80, manaRegen: 9, defense: 1, color: '#84e39a', hpGrowth: 9,
+      blurb: 'Fast and long ranged. Kites enemies with piercing arrows.'
     },
     mage: {
-      name: 'Mage', maxHp: 72, attack: 22, speed: 112, range: 190,
-      mana: 125, manaRegen: 11, defense: 0, color: '#c99bff',
-      blurb: 'Low HP. Fireballs, ice and teleport magic.'
+      name: 'Mage', maxHp: 75, attack: 22, speed: 112, range: 190,
+      mana: 130, manaRegen: 12, defense: 0, color: '#c99bff', hpGrowth: 8,
+      blurb: 'High magical burst. Fireballs, frost slows, and teleportation.'
     },
     cleric: {
       name: 'Cleric', maxHp: 125, attack: 15, speed: 115, range: 120,
-      mana: 110, manaRegen: 11, defense: 3, color: '#ffd75e',
+      mana: 110, manaRegen: 11, defense: 3, color: '#ffd75e', hpGrowth: 11,
       blurb: 'Holy champion. Sustains allies with party heals, smites, and sacred shields.'
     },
     rogue: {
       name: 'Rogue', maxHp: 90, attack: 20, speed: 150, range: 60,
-      mana: 75, manaRegen: 8, defense: 1, color: '#52ffb8',
+      mana: 75, manaRegen: 8, defense: 1, color: '#52ffb8', hpGrowth: 9,
       blurb: 'Lethal ambusher. Vanishes into shadows and deals devastating critical strikes.'
     },
     summoner: {
       name: 'Summoner', maxHp: 80, attack: 17, speed: 110, range: 210,
-      mana: 140, manaRegen: 13, defense: 1, color: '#e08bff',
+      mana: 140, manaRegen: 13, defense: 1, color: '#e08bff', hpGrowth: 8,
       blurb: 'Master of the occult. Summons spiritual familiars to fight alongside them.'
     }
   };
@@ -109,40 +110,40 @@
   // Each role has four skills, bound to keys 1 through 4.
   const SKILLS = {
     swordsman: [
-      { name: 'Dash Strike', cost: 15, cd: 5, range: 95, aoe: 70, desc: 'Dash forward and slash everything you pass.' },
-      { name: 'Shield Block', cost: 10, cd: 8, desc: 'Block 80% of damage for 3 seconds.' },
-      { name: 'Whirlwind', cost: 25, cd: 9, desc: 'Spin and hit every nearby enemy.' },
-      { name: 'Seismic Slam', cost: 32, cd: 12, desc: 'Smash the ground, damaging and slowing nearby enemies.' }
+      { name: 'Dash Strike', cost: 15, cd: 5, range: 95, damageMult: 1.7, aoe: 70, desc: 'Dash forward and slash through all enemies.' },
+      { name: 'Shield Block', cost: 10, cd: 8, range: 0, damageMult: 0, buff: 'shield', duration: 3, desc: 'Block 80% incoming damage for 3 seconds.' },
+      { name: 'Whirlwind', cost: 25, cd: 9, range: 75, damageMult: 1.4, desc: 'Spin rapidly, hitting all surrounding targets.' },
+      { name: 'Seismic Slam', cost: 32, cd: 12, range: 110, damageMult: 1.6, slow: 0.5, desc: 'Shatter the ground, dealing heavy damage and slowing.' }
     ],
     archer: [
-      { name: 'Multi-Shot', cost: 18, cd: 5, range: 260, desc: 'Fire three arrows in a spread.' },
-      { name: 'Roll Dodge', cost: 12, cd: 6, range: 120, desc: 'Roll quickly and become untouchable.' },
-      { name: 'Poison Arrow', cost: 20, cd: 8, range: 280, desc: 'An arrow that poisons its target.' },
-      { name: 'Arrow Rain', cost: 30, cd: 10, range: 320, aoe: 112, desc: 'Rain arrows over the selected area.' }
+      { name: 'Multi-Shot', cost: 18, cd: 5, range: 260, damageMult: 0.75, projectiles: 3, desc: 'Fire three arrows in an arc.' },
+      { name: 'Roll Dodge', cost: 12, cd: 6, range: 120, damageMult: 0, buff: 'invuln', duration: 0.4, desc: 'Tumble swiftly, evading all attacks.' },
+      { name: 'Poison Arrow', cost: 20, cd: 8, range: 280, damageMult: 0.9, dot: { damage: 8, duration: 4 }, desc: 'Infect the target with deadly toxin.' },
+      { name: 'Arrow Rain', cost: 30, cd: 10, range: 300, damageMult: 1.5, aoe: 90, desc: 'Hail of piercing arrows in the targeted area.' }
     ],
     mage: [
-      { name: 'Ice Nova', cost: 25, cd: 8, desc: 'Damage and slow all nearby enemies.' },
-      { name: 'Blink', cost: 18, cd: 6, range: 170, desc: 'Teleport toward your cursor.' },
-      { name: 'Meteor', cost: 40, cd: 12, range: 260, aoe: 108, desc: 'Call down a huge fire blast at your cursor.' },
-      { name: 'Arcane Burst', cost: 32, cd: 9, range: 220, aoe: 105, desc: 'Detonate arcane energy in a targeted area.' }
+      { name: 'Ice Nova', cost: 25, cd: 8, range: 85, damageMult: 0.85, slow: 0.4, desc: 'Blast frost outward, freezing and slowing enemies.' },
+      { name: 'Blink', cost: 18, cd: 6, range: 180, damageMult: 0, teleport: true, desc: 'Instantaneous teleportation toward cursor.' },
+      { name: 'Meteor', cost: 40, cd: 12, range: 240, damageMult: 2.6, aoe: 100, desc: 'Summon a colossal flaming meteor from the sky.' },
+      { name: 'Arcane Burst', cost: 32, cd: 9, range: 160, damageMult: 1.8, desc: 'Detonate concentrated arcane energy.' }
     ],
     cleric: [
-      { name: 'Holy Smite', cost: 18, cd: 5, range: 180, aoe: 65, desc: 'Call down a pillar of holy light to strike the enemy.' },
-      { name: 'Divine Heal', cost: 28, cd: 7, desc: 'Heal yourself and all nearby party members.' },
-      { name: 'Aegis Ward', cost: 22, cd: 10, desc: 'Grant a barrier absorbing damage and granting defense.' },
-      { name: 'Radiant Nova', cost: 38, cd: 11, desc: 'Release an explosion of holy light that harms foes and heals allies.' }
+      { name: 'Holy Smite', cost: 18, cd: 5, range: 150, damageMult: 1.7, desc: 'Call down a pillar of holy light to strike the enemy.' },
+      { name: 'Divine Heal', cost: 28, cd: 7, range: 180, healSelf: 65, healParty: 45, desc: 'Heal yourself and all nearby party members.' },
+      { name: 'Aegis Ward', cost: 22, cd: 10, range: 0, buff: 'ward', duration: 4, desc: 'Grant a barrier absorbing damage and granting defense.' },
+      { name: 'Radiant Nova', cost: 38, cd: 11, range: 120, damageMult: 2.2, healParty: 35, desc: 'Release an explosion of holy light that harms foes and heals allies.' }
     ],
     rogue: [
-      { name: 'Shadow Strike', cost: 16, cd: 4, range: 110, aoe: 60, desc: 'Lunge behind the target with a brutal stab.' },
-      { name: 'Smoke Bomb', cost: 20, cd: 9, desc: 'Drop smoke, becoming invisible and gaining +30% movement speed.' },
-      { name: 'Poison Dart', cost: 18, cd: 6, range: 220, desc: 'Throw a toxic dart that continuously drains enemy life.' },
-      { name: 'Eviscerate', cost: 35, cd: 10, range: 70, aoe: 75, desc: 'Vicious execution dealing catastrophic damage to wounded foes.' }
+      { name: 'Shadow Strike', cost: 16, cd: 4, range: 110, damageMult: 2.7, critBonus: 0.25, desc: 'Lunge behind the target with a brutal stab.' },
+      { name: 'Smoke Bomb', cost: 20, cd: 9, range: 0, buff: 'stealth', duration: 2.5, desc: 'Drop smoke, becoming invisible and gaining +30% movement speed.' },
+      { name: 'Poison Dart', cost: 18, cd: 6, range: 220, damageMult: 1.0, dot: { damage: 10, duration: 5 }, desc: 'Throw a toxic dart that continuously drains enemy life.' },
+      { name: 'Eviscerate', cost: 35, cd: 10, range: 70, damageMult: 3.0, critBonus: 0.35, desc: 'Vicious execution dealing catastrophic damage to wounded foes.' }
     ],
     summoner: [
-      { name: 'Arcane Blast', cost: 15, cd: 4, range: 200, desc: 'Hurl a bolt of condensed spiritual force.' },
-      { name: 'Summon Familiar', cost: 30, cd: 15, desc: 'Summon an ethereal familiar that fights alongside you.' },
-      { name: 'Spirit Ward', cost: 24, cd: 9, desc: 'Distribute 30% of incoming damage to your spirit energy.' },
-      { name: 'Soul Nova', cost: 42, cd: 12, desc: 'Sacrifice spirit power to erupt in a shockwave of necrotic force.' }
+      { name: 'Arcane Blast', cost: 15, cd: 4, range: 200, damageMult: 1.3, desc: 'Hurl a bolt of condensed spiritual force.' },
+      { name: 'Summon Familiar', cost: 30, cd: 15, range: 60, summon: 'familiar', desc: 'Summon an ethereal familiar that fights alongside you.' },
+      { name: 'Spirit Ward', cost: 24, cd: 9, range: 0, buff: 'spirit_shield', duration: 5, desc: 'Distribute 30% of incoming damage to your summon or spirit energy.' },
+      { name: 'Soul Nova', cost: 42, cd: 12, range: 130, damageMult: 2.6, desc: 'Sacrifice spirit power to erupt in a shockwave of necrotic force.' }
     ]
   };
 
@@ -333,9 +334,10 @@
   }
 
   const RARITY = {
-    common: { color: '#dedede', mult: 1, label: 'Common' },
-    rare: { color: '#62b4ff', mult: 1.35, label: 'Rare' },
-    epic: { color: '#ca83ff', mult: 1.8, label: 'Epic' }
+    common: { color: '#c0c6d2', mult: 1.0, label: 'Common' },
+    rare: { color: '#56c2ff', mult: 1.6, label: 'Rare' },
+    epic: { color: '#c86dff', mult: 2.5, label: 'Epic' },
+    legendary: { color: '#ffaa00', mult: 4.0, label: 'Legendary' }
   };
 
   const CLASS_STAT_LABELS = {
@@ -343,15 +345,25 @@
     range: 'Range', mana: 'Max mana', manaRegen: 'Mana regen', crit: 'Critical chance'
   };
 
+  function itemRestoreText(item) {
+    if (!item) return '';
+    const parts = [];
+    if (Number(item.heal) > 0) parts.push(`Heals ${item.heal} HP`);
+    if (Number(item.mana) > 0) parts.push(`Restores ${item.mana} MP`);
+    return parts.join('  ');
+  }
+
   function itemStatsText(item) {
-    if (!item || !item.stats) return item && item.heal ? `Heals ${item.heal} HP` : 'No attribute bonus';
+    if (!item || !item.stats) return itemRestoreText(item) || 'No attribute bonus';
     const entries = Object.entries(CLASS_STAT_LABELS).filter(([key]) => Number(item.stats[key]) !== 0);
-    if (!entries.length) return item.heal ? `Heals ${item.heal} HP` : (item.desc || 'No attribute bonus');
-    return entries.map(([key, label]) => {
+    const restore = itemRestoreText(item);
+    if (!entries.length) return restore || item.desc || 'No attribute bonus';
+    const stats = entries.map(([key, label]) => {
       const value = Number(item.stats[key]) || 0;
       if (key === 'crit') return `Crit +${Math.round(value * 100)}%`;
       return `${label} +${value}`;
     }).join('  ');
+    return restore ? `${stats}  ${restore}` : stats;
   }
 
   function itemCanEquip(item, classId) {
@@ -368,13 +380,46 @@
     if (item.art === 'sword' || /sword|blade|runed edge/i.test(item.name || '')) return 'swordsman';
     if (item.art === 'bow' || /\bbow\b/i.test(item.name || '')) return 'archer';
     if (item.art === 'staff' || /staff|wand/i.test(item.name || '')) return 'mage';
+    if (item.art === 'mace' || /mace|hammer|scepter/i.test(item.name || '')) return 'cleric';
+    if (item.art === 'dagger' || /dagger|dirk|shiv/i.test(item.name || '')) return 'rogue';
+    if (item.art === 'tome' || /tome|grimoire|orb/i.test(item.name || '')) return 'summoner';
     return null;
+  }
+
+  // Mirrors server/pets.js so offline companions grant the same aura as online.
+  const PET_AURAS = {
+    wolf: { aura: { attack: 4, speed: 6 }, perLevel: { attack: 1.5, hp: 8 } },
+    fairy: { aura: { manaRegen: 1.2, mana: 20 }, perLevel: { manaRegen: 0.3, hp: 6 } },
+    golem: { aura: { defense: 3, hp: 25 }, perLevel: { defense: 1.2, hp: 14 } },
+    dragon: { aura: { crit: 0.03, attack: 3 }, perLevel: { attack: 1.8, hp: 9 } }
+  };
+
+  function petAuraStats(pet) {
+    const def = pet && PET_AURAS[pet.type];
+    if (!def) return {};
+    const lv = Math.max(0, (Number(pet.level) || 1) - 1);
+    const stats = Object.assign({}, def.aura);
+    for (const [key, perLevel] of Object.entries(def.perLevel || {})) {
+      stats[key] = (stats[key] || 0) + lv * perLevel;
+    }
+    for (const item of [pet.equipment?.collar, pet.equipment?.charm]) {
+      if (!item || !item.stats) continue;
+      for (const [key, value] of Object.entries(item.stats)) {
+        stats[key] = (stats[key] || 0) + Number(value || 0);
+      }
+    }
+    return stats;
   }
 
   function sameConsumableStack(a, b) {
     return !!a && !!b && a.slot === 'consumable' && b.slot === 'consumable' &&
       a.name === b.name && a.rarity === b.rarity && a.heal === b.heal &&
+      (a.mana || 0) === (b.mana || 0) &&
       (a.teleportTo || null) === (b.teleportTo || null);
+  }
+
+  function labelForLeaderboard(key) {
+    return { gold: 'GOLD', bossKills: 'BOSSES', pvpRating: 'RATING', level: 'LEVEL' }[key] || 'SCORE';
   }
 
   function itemSellValue(item) {
@@ -405,16 +450,28 @@
   ];
   const SPECS = {
     swordsman: [
-      { id: 'Guardian', desc: '+35 HP, +5 defense, -10% damage taken.' },
-      { id: 'Berserker', desc: '+9 attack, -2 defense.' }
+      { id: 'Guardian', desc: '+40 HP, +6 defense, -12% damage taken.' },
+      { id: 'Berserker', desc: '+12 attack, -2 defense, +6 speed, +5% crit.' }
     ],
     archer: [
-      { id: 'Ranger', desc: '+16 speed, +35 range.' },
-      { id: 'Assassin', desc: '+6 attack, +8% crit chance.' }
+      { id: 'Ranger', desc: '+10 HP, +18 speed, +45 range, +4 attack, +4% crit.' },
+      { id: 'Sniper', desc: '+14 attack, +70 range, +8% crit, -5 speed.' }
     ],
     mage: [
-      { id: 'Pyromancer', desc: '+8 attack, +20 mana.' },
-      { id: 'Cryomancer', desc: '+40 mana, +12 HP.' }
+      { id: 'Pyromancer', desc: '+12 attack, +25 mana, +6% crit, -5% cooldowns.' },
+      { id: 'Cryomancer', desc: '+18 HP, +45 mana, +6 defense, -8% damage taken.' }
+    ],
+    cleric: [
+      { id: 'Templar', desc: '+30 HP, +5 defense, +8 attack, +15 mana, -10% damage taken.' },
+      { id: 'Priest', desc: '+10 HP, +50 mana, +5 attack, +25 range, -10% cooldowns.' }
+    ],
+    rogue: [
+      { id: 'Assassin', desc: '+11 attack, +12% crit, +10 speed, -12% cooldowns.' },
+      { id: 'Shadowblade', desc: '+15 HP, +15 speed, +7 attack, +7% crit, -5% damage taken.' }
+    ],
+    summoner: [
+      { id: 'Necromancer', desc: '+20 HP, +35 mana, +9 attack, +2 defense, -6% damage taken.' },
+      { id: 'Elementalist', desc: '+5 HP, +40 mana, +11 attack, +20 range, +5 speed, +5% crit.' }
     ]
   };
 
@@ -1090,7 +1147,9 @@
       const fxColors = { flame: '#ff8c42', frost: '#9ce7ff', void: '#c98bff', thunder: '#ffe45e' };
       const specFx = {
         Guardian: '#8fd0ff', Berserker: '#ff6b6b', Ranger: '#7bff9b', Assassin: '#8e7bd8',
-        Pyromancer: '#ff9c42', Cryomancer: '#8ee8ff'
+        Sniper: '#84e39a', Pyromancer: '#ff9c42', Cryomancer: '#8ee8ff',
+        Templar: '#ffd75e', Priest: '#fff3a8', Shadowblade: '#52ffb8',
+        Necromancer: '#c98bff', Elementalist: '#e08bff'
       };
       if (fxColors[weaponEffect]) {
         setPx(g, 13, 4 + (frame % 2), fxColors[weaponEffect]);
@@ -1270,8 +1329,8 @@
   // Item images are generated from the same tiny pixel grid as characters, so
   // every item - including role relics - has art without external files.
   const ITEM_ART_KEYS = new Set([
-    'potion', 'scroll', 'sword', 'bow', 'staff', 'armor',
-    'roleSword', 'roleBow', 'roleStaff'
+    'potion', 'scroll', 'sword', 'bow', 'staff', 'mace', 'dagger', 'tome', 'armor',
+    'roleSword', 'roleBow', 'roleStaff', 'roleMace', 'roleDagger', 'roleTome'
   ]);
 
   function itemArtKey(item) {
@@ -1282,6 +1341,9 @@
     if (item.slot === 'consumable' || name.includes('potion')) return 'potion';
     if (name.includes('bow')) return 'bow';
     if (name.includes('staff') || name.includes('wand')) return 'staff';
+    if (name.includes('mace') || name.includes('hammer') || name.includes('scepter')) return 'mace';
+    if (name.includes('dagger') || name.includes('dirk') || name.includes('shiv')) return 'dagger';
+    if (name.includes('tome') || name.includes('grimoire') || name.includes('orb')) return 'tome';
     if (name.includes('sword') || name.includes('blade') || name.includes('edge')) return 'sword';
     if (item.slot === 'armor' || name.includes('armor') || name.includes('mail') ||
         name.includes('vest') || name.includes('gear')) return 'armor';
@@ -1386,6 +1448,57 @@
           setPx(g, 7, 3, metal);
           setPx(g, 8, 3, metal);
           setPx(g, 7, 2, light);
+        }
+      } else if (art === 'roleMace' || art === 'mace') {
+        const ornate = art === 'roleMace';
+        setRect(g, 7, ornate ? 5 : 6, 2, ornate ? 10 : 9, ornate ? '#7a5230' : wood);
+        setRect(g, 6, ornate ? 4 : 5, 4, 1, gold);
+        setRect(g, 5, ornate ? 1 : 2, 6, ornate ? 5 : 4, metal);
+        setPx(g, 6, ornate ? 0 : 1, light);
+        setPx(g, 9, ornate ? 0 : 1, light);
+        setRect(g, 4, ornate ? 2 : 3, 8, 2, metal);
+        setPx(g, ornate ? 3 : 4, ornate ? 3 : 4, glow);
+        setPx(g, ornate ? 12 : 11, ornate ? 3 : 4, glow);
+        setPx(g, 7, ornate ? 2 : 3, light);
+        if (ornate) {
+          setPx(g, 6, 0, glow);
+          setPx(g, 9, 0, glow);
+          setPx(g, 5, 6, glow);
+          setPx(g, 10, 6, glow);
+        }
+      } else if (art === 'roleDagger' || art === 'dagger') {
+        const ornate = art === 'roleDagger';
+        setPx(g, 8, ornate ? 0 : 1, light);
+        setRect(g, 7, ornate ? 1 : 2, 2, ornate ? 7 : 6, metal);
+        setPx(g, 7, ornate ? 2 : 3, light);
+        setPx(g, 8, ornate ? 6 : 6, '#9aa8bd');
+        setRect(g, 5, ornate ? 8 : 8, 6, 1, gold);
+        setPx(g, ornate ? 4 : 5, ornate ? 8 : 8, glow);
+        setPx(g, ornate ? 11 : 10, ornate ? 8 : 8, glow);
+        setRect(g, 7, ornate ? 9 : 9, 2, ornate ? 6 : 5, ornate ? '#2f5c46' : wood);
+        setRect(g, 7, ornate ? 14 : 13, 2, 1, '#2a2018');
+        if (ornate) {
+          setPx(g, 5, 4, glow);
+          setPx(g, 10, 5, glow);
+          setPx(g, 6, 11, glow);
+        }
+      } else if (art === 'roleTome' || art === 'tome') {
+        setRect(g, 3, 2, 10, 12, dark);
+        setRect(g, 4, 3, 8, 10, '#e8dcc0');
+        setRect(g, 4, 3, 1, 10, metal);
+        setRect(g, 11, 3, 1, 10, metal);
+        setRect(g, 7, 2, 2, 12, metal);
+        setPx(g, 6, 6, glow);
+        setPx(g, 7, 7, glow);
+        setPx(g, 9, 5, glow);
+        setPx(g, 10, 9, glow);
+        setPx(g, 6, 10, glow);
+        if (art === 'roleTome') {
+          setPx(g, 8, 0, light);
+          setPx(g, 7, 1, glow);
+          setPx(g, 9, 1, glow);
+          setPx(g, 5, 4, gold);
+          setPx(g, 11, 11, gold);
         }
       } else {
         setRect(g, 4, 3, 8, 2, dark);
@@ -1639,7 +1752,11 @@
     ctx.restore();
   }
 
-  const MINIMAP_COLORS = ['#596d45', '#28799a', '#1d4737', '#bf965d', '#a65c38', '#34383f', '#4f9c62', '#8d6a49', '#85483c', '#c7a879'];
+  const MINIMAP_COLORS = [
+    '#596d45', '#28799a', '#1d4737', '#bf965d', '#a65c38', '#34383f',
+    '#4f9c62', '#8d6a49', '#85483c', '#c7a879', '#9fd6e8', '#d9e6f2',
+    '#e05a32', '#5b4a45', '#2f7c63', '#31543d', '#6b6f86'
+  ];
 
   // ============================================================
   // 3. ITEMS, AUDIO, AND SMALL VISUAL CLASSES
@@ -1652,27 +1769,49 @@
   const ROLE_ITEM_ART = {
     swordsman: 'roleSword',
     archer: 'roleBow',
-    mage: 'roleStaff'
+    mage: 'roleStaff',
+    cleric: 'roleMace',
+    rogue: 'roleDagger',
+    summoner: 'roleTome'
   };
 
+  // Kept in sync with server/items.js so offline and online relics match.
   const ROLE_ITEM_DEFS = {
     swordsman: {
       name: 'Dawnfang Blade', art: ROLE_ITEM_ART.swordsman, icon: 'S',
-      stats: { attack: 18, hp: 12, speed: 4, crit: 0.02 },
-      effect: 'flame', spriteColor: '#eef5ff', color: '#ffd27a', price: 420,
+      stats: { attack: 20, hp: 16, speed: 4, crit: 0.03, defense: 3 },
+      effect: 'flame', spriteColor: '#eef5ff', color: '#ffd27a', price: 450,
       desc: 'Swordsman relic: a sunlit blade that burns on impact.'
     },
     archer: {
       name: 'Windsong Bow', art: ROLE_ITEM_ART.archer, icon: 'B',
-      stats: { attack: 14, speed: 12, range: 28, crit: 0.04 },
-      effect: 'frost', spriteColor: '#9ce7c4', color: '#8ee6ff', price: 420,
+      stats: { attack: 16, speed: 14, range: 32, crit: 0.06 },
+      effect: 'frost', spriteColor: '#9ce7c4', color: '#8ee6ff', price: 450,
       desc: 'Archer relic: a living bow that hums with the north wind.'
     },
     mage: {
       name: 'Astral Flame Staff', art: ROLE_ITEM_ART.mage, icon: 'T',
-      stats: { attack: 16, mana: 24, range: 18, manaRegen: 1.5 },
-      effect: 'void', spriteColor: '#c9a6ff', color: '#ffb15c', price: 420,
+      stats: { attack: 18, mana: 30, range: 22, manaRegen: 2.0 },
+      effect: 'void', spriteColor: '#c9a6ff', color: '#ffb15c', price: 450,
       desc: 'Mage relic: focuses starlight into an eternal flame.'
+    },
+    cleric: {
+      name: 'Mace of Radiance', art: ROLE_ITEM_ART.cleric, icon: 'M',
+      stats: { attack: 15, hp: 25, defense: 4, mana: 25, manaRegen: 1.8 },
+      effect: 'holy', spriteColor: '#fff2a8', color: '#ffd700', price: 450,
+      desc: 'Cleric relic: blessed hammer that channels holy miracles.'
+    },
+    rogue: {
+      name: 'Shadowfang Dagger', art: ROLE_ITEM_ART.rogue, icon: 'D',
+      stats: { attack: 19, speed: 18, crit: 0.12, defense: 1 },
+      effect: 'poison', spriteColor: '#52ffb8', color: '#2ecc71', price: 450,
+      desc: 'Rogue relic: coated in venom that dissolves armor.'
+    },
+    summoner: {
+      name: 'Grimoire of the Void', art: ROLE_ITEM_ART.summoner, icon: 'G',
+      stats: { attack: 17, mana: 35, defense: 2, manaRegen: 2.2 },
+      effect: 'void', spriteColor: '#c48bff', color: '#9b59b6', price: 450,
+      desc: 'Summoner relic: ancient book pulsating with otherworldly spirits.'
     }
   };
 
@@ -1707,6 +1846,7 @@
       art: extra.art || null,
       price: extra.price || Math.round(25 * RARITY[rarity].mult),
       heal: extra.heal || 0,
+      mana: extra.mana || 0,
       quantity: slot === 'consumable' ? clamp(Math.floor(Number(extra.quantity) || 1), 1, 99) : 1,
       teleportTo: extra.teleportTo || null,
       desc: extra.desc || ''
@@ -1722,16 +1862,30 @@
 
   function starterItems(classId) {
     const spriteColors = STARTER_SPRITE_COLORS[classId] || STARTER_SPRITE_COLORS.swordsman;
-    const weapon = classId === 'swordsman'
-      ? makeItem('Iron Sword', 'weapon', 'common', { attack: 5 }, { classId, art: 'sword', spriteColor: spriteColors.weapon, desc: 'Swordsman weapon. A trusty blade.' })
-      : classId === 'archer'
-        ? makeItem('Short Bow', 'weapon', 'common', { attack: 4 }, { classId, art: 'bow', spriteColor: spriteColors.weapon, desc: 'Archer weapon. Light and quick.' })
-        : makeItem('Oak Staff', 'weapon', 'common', { attack: 6 }, { classId, art: 'staff', spriteColor: spriteColors.weapon, desc: 'Mage weapon. Channels fire magic.' });
-    const armor = makeItem('Traveler Gear', 'armor', 'common', { hp: 10, defense: 2 }, { classId, art: 'armor', spriteColor: spriteColors.armor, desc: `Basic ${CLASS_DATA[classId].name} armor.` });
+    let weapon;
+    if (classId === 'swordsman') {
+      weapon = makeItem('Iron Sword', 'weapon', 'common', { attack: 6 }, { classId, art: 'sword', spriteColor: spriteColors.weapon, desc: 'Trusty steel blade.' });
+    } else if (classId === 'archer') {
+      weapon = makeItem('Short Bow', 'weapon', 'common', { attack: 5 }, { classId, art: 'bow', spriteColor: spriteColors.weapon, desc: 'Light hunting bow.' });
+    } else if (classId === 'mage') {
+      weapon = makeItem('Oak Staff', 'weapon', 'common', { attack: 7, mana: 10 }, { classId, art: 'staff', spriteColor: spriteColors.weapon, desc: 'Channels raw arcane force.' });
+    } else if (classId === 'cleric') {
+      weapon = makeItem('Acolyte Mace', 'weapon', 'common', { attack: 5, hp: 10, mana: 8 }, { classId, art: 'mace', spriteColor: spriteColors.weapon, desc: 'Blunt mace inscribed with prayers.' });
+    } else if (classId === 'rogue') {
+      weapon = makeItem('Thief Dagger', 'weapon', 'common', { attack: 6, speed: 4, crit: 0.03 }, { classId, art: 'dagger', spriteColor: spriteColors.weapon, desc: 'Concealable serrated blade.' });
+    } else {
+      weapon = makeItem('Apprentice Grimoire', 'weapon', 'common', { attack: 6, mana: 12, manaRegen: 0.5 }, { classId: 'summoner', art: 'tome', spriteColor: spriteColors.weapon, desc: 'Pages inscribed with spirit runes.' });
+    }
+    const armor = makeItem('Traveler Tunic', 'armor', 'common', { hp: 12, defense: 2 }, { classId, art: 'armor', spriteColor: spriteColors.armor, desc: 'Sturdy traveler garments.' });
+    const helmet = makeItem('Leather Cap', 'helmet', 'common', { hp: 8, defense: 1 }, { art: 'helmet', spriteColor: '#8a6240', desc: 'Padded cap protecting your brow.' });
+    const boots = makeItem('Worn Boots', 'boots', 'common', { speed: 4, defense: 1 }, { art: 'boots', spriteColor: '#634730', desc: 'Comfortable leather boots.' });
+    const ring = makeItem('Copper Band', 'ring', 'common', { attack: 1, crit: 0.01 }, { art: 'ring', spriteColor: '#cf8a48', desc: 'Simple copper ring with faint warmth.' });
+    const necklace = makeItem('Bone Talisman', 'necklace', 'common', { hp: 6, mana: 6 }, { art: 'necklace', spriteColor: '#e0dad0', desc: 'Carved pendant said to ward off misfortune.' });
     return {
-      equipment: { weapon, armor },
+      equipment: { weapon, armor, helmet, boots, ring, necklace },
       inventory: [
-        makeItem('Health Potion', 'consumable', 'common', {}, { art: 'potion', icon: 'P', heal: 55, quantity: 2, price: 20, desc: 'Restores 55 HP.' })
+        makeItem('Health Potion', 'consumable', 'common', {}, { art: 'potion', icon: 'P', heal: 60, quantity: 3, price: 20, desc: 'Restores 60 HP instantly.' }),
+        makeItem('Mana Potion', 'consumable', 'common', {}, { art: 'potion', icon: 'M', spriteColor: '#5dade2', mana: 40, quantity: 2, price: 25, desc: 'Restores 40 MP instantly.' })
       ]
     };
   }
@@ -1743,21 +1897,29 @@
     if (index % 3 === 2) return teleportScroll();
     const kind = index % 2 === 0 ? 'weapon' : 'armor';
     if (kind === 'weapon') {
-      const weapon = classId === 'archer'
-        ? { name: 'Windrunner Bow', art: 'bow', stats: { attack: Math.round(5 * mult), speed: Math.round(4 * mult), crit: 0.01 * mult }, color: '#7fc4ff' }
-        : classId === 'mage'
-          ? { name: 'Starweave Staff', art: 'staff', stats: { attack: Math.round(6 * mult), mana: Math.round(10 * mult), manaRegen: Math.round(0.5 * mult * 10) / 10 }, color: '#c28bff' }
-          : { name: 'Runed Edge', art: 'sword', stats: { attack: Math.round(6 * mult), hp: Math.round(4 * mult), defense: Math.max(1, Math.round(mult)) }, color: '#d38bff' };
+      const weaponDefs = {
+        swordsman: { name: 'Runed Edge', art: 'sword', stats: { attack: Math.round(6 * mult), hp: Math.round(4 * mult), defense: Math.max(1, Math.round(mult)) }, color: '#d38bff' },
+        archer: { name: 'Windrunner Bow', art: 'bow', stats: { attack: Math.round(5 * mult), speed: Math.round(4 * mult), crit: 0.01 * mult }, color: '#7fc4ff' },
+        mage: { name: 'Starweave Staff', art: 'staff', stats: { attack: Math.round(6 * mult), mana: Math.round(10 * mult), manaRegen: Math.round(0.5 * mult * 10) / 10 }, color: '#c28bff' },
+        cleric: { name: 'Sunlit Mace', art: 'mace', stats: { attack: Math.round(5 * mult), hp: Math.round(6 * mult), mana: Math.round(8 * mult), manaRegen: Math.round(0.4 * mult * 10) / 10 }, color: '#ffe08a' },
+        rogue: { name: 'Quickfang Dagger', art: 'dagger', stats: { attack: Math.round(5 * mult), speed: Math.round(7 * mult), crit: 0.02 * mult }, color: '#7dffb0' },
+        summoner: { name: 'Spirit Tome', art: 'tome', stats: { attack: Math.round(5 * mult), mana: Math.round(14 * mult), manaRegen: Math.round(0.6 * mult * 10) / 10 }, color: '#c99bff' }
+      };
+      const weapon = weaponDefs[classId] || weaponDefs.swordsman;
       return makeItem(weapon.name, 'weapon', rarity, weapon.stats, {
         classId, art: weapon.art, spriteColor: weapon.color,
         desc: `${CLASS_DATA[classId].name} weapon with role-specific attributes.`
       });
     }
-    const armor = classId === 'archer'
-      ? { name: 'Windwoven Vest', stats: { hp: Math.round(12 * mult), defense: Math.round(2 * mult), speed: Math.round(2 * mult) } }
-      : classId === 'mage'
-        ? { name: 'Aether Robe', stats: { hp: Math.round(10 * mult), defense: Math.max(1, Math.round(mult)), mana: Math.round(8 * mult), manaRegen: Math.round(0.4 * mult * 10) / 10 } }
-        : { name: 'Dragonhide', stats: { hp: Math.round(16 * mult), defense: Math.round(3 * mult) } };
+    const armorDefs = {
+      swordsman: { name: 'Dragonhide', stats: { hp: Math.round(16 * mult), defense: Math.round(3 * mult) } },
+      archer: { name: 'Windwoven Vest', stats: { hp: Math.round(12 * mult), defense: Math.round(2 * mult), speed: Math.round(2 * mult) } },
+      mage: { name: 'Aether Robe', stats: { hp: Math.round(10 * mult), defense: Math.max(1, Math.round(mult)), mana: Math.round(8 * mult), manaRegen: Math.round(0.4 * mult * 10) / 10 } },
+      cleric: { name: 'Radiant Vestments', stats: { hp: Math.round(14 * mult), defense: Math.round(3 * mult), mana: Math.round(10 * mult), manaRegen: Math.round(0.3 * mult * 10) / 10 } },
+      rogue: { name: 'Shadow Cloak', stats: { hp: Math.round(10 * mult), defense: Math.round(1 * mult), speed: Math.round(5 * mult), crit: 0.01 * mult } },
+      summoner: { name: 'Spiritweave Robe', stats: { hp: Math.round(11 * mult), defense: Math.round(2 * mult), mana: Math.round(14 * mult), manaRegen: Math.round(0.5 * mult * 10) / 10 } }
+    };
+    const armor = armorDefs[classId] || armorDefs.swordsman;
     return makeItem(
       armor.name,
       'armor', rarity, armor.stats,
@@ -1778,7 +1940,10 @@
       randomShopItem(2, classId),
       roleItem('swordsman'),
       roleItem('archer'),
-      roleItem('mage')
+      roleItem('mage'),
+      roleItem('cleric'),
+      roleItem('rogue'),
+      roleItem('summoner')
     ];
   }
 
@@ -1789,7 +1954,7 @@
 
   function normalizeItem(raw, defaultClassId = null) {
     if (!raw || typeof raw !== 'object') return null;
-    const slot = ['weapon', 'armor', 'consumable'].includes(raw.slot) ? raw.slot : 'consumable';
+    const slot = ALL_ITEM_SLOTS.includes(raw.slot) ? raw.slot : 'consumable';
     const rarity = RARITY[raw.rarity] ? raw.rarity : 'common';
     const roleClassId = Object.entries(ROLE_ITEM_DEFS)
       .find(([id, def]) => raw.art === ROLE_ITEM_ART[id] || raw.name === def.name)?.[0];
@@ -1806,6 +1971,7 @@
       art: raw.art,
       price: raw.price,
       heal: raw.heal,
+      mana: raw.mana,
       quantity: raw.quantity,
       teleportTo: raw.teleportTo,
       desc: raw.desc
@@ -2454,12 +2620,20 @@
       this.hasteTime = 0;
       this.familiarTime = 0;
       this.dashTime = 0;
+      this.dashDir = 0;
+      this.pet = null;
       this.emote = null;
       this.critChance = 0.10;
       // Deeper progression (expansion 5).
       this.spec = '';
+      this.title = 'Apprentice';
       this.talents = { power: 0, haste: 0, vigor: 0, crit: 0, guard: 0, focus: 0 };
       this.materials = { herb: 0, ore: 0, essence: 0 };
+      this.pvpRating = 1000;
+      this.pvpWins = 0;
+      this.pvpLosses = 0;
+      this.bossKills = 0;
+      this.zonesVisited = ['forest'];
       this.hp = CLASS_DATA[classId].maxHp;
       this.mp = CLASS_DATA[classId].mana;
       const starter = starterItems(classId);
@@ -2474,28 +2648,41 @@
     recalculateStats(clampValues = true) {
       const base = CLASS_DATA[this.classId];
       const lv = this.level - 1;
-      const weapon = this.equipment.weapon && itemCanEquip(this.equipment.weapon, this.classId) ? this.equipment.weapon.stats : {};
-      const armor = this.equipment.armor && itemCanEquip(this.equipment.armor, this.classId) ? this.equipment.armor.stats : {};
+      const gear = {};
+      for (const slot of VALID_EQUIP_SLOTS) {
+        const item = this.equipment && this.equipment[slot];
+        if (!item || !itemCanEquip(item, this.classId) || !item.stats) continue;
+        for (const [key, value] of Object.entries(item.stats)) {
+          gear[key] = (gear[key] || 0) + Number(value || 0);
+        }
+      }
+      const petAura = petAuraStats(this.pet);
       const t = this.talents || {};
       // These modifiers mirror the authoritative server formulas so offline and
       // online characters feel the same.
       const specMods = {
-        Guardian: { hp: 35, defense: 5, taken: 0.9 },
-        Berserker: { attack: 9, defense: -2 },
-        Ranger: { speed: 16, range: 35 },
-        Assassin: { attack: 6, crit: 0.08, cd: 0.9 },
-        Pyromancer: { attack: 8, mana: 20 },
-        Cryomancer: { mana: 40, hp: 12 }
+        Guardian: { hp: 40, defense: 6, taken: 0.88, attack: 0, speed: 0, range: 0, crit: 0, cd: 1, mp: 0 },
+        Berserker: { hp: 0, attack: 12, defense: -2, taken: 1.05, speed: 6, range: 0, crit: 0.05, cd: 0.95, mp: 0 },
+        Ranger: { hp: 10, speed: 18, range: 45, attack: 4, defense: 0, taken: 1, crit: 0.04, cd: 1, mp: 0 },
+        Sniper: { hp: 0, attack: 14, range: 70, crit: 0.08, speed: -5, defense: 0, taken: 1, cd: 1, mp: 0 },
+        Pyromancer: { hp: 0, attack: 12, mp: 25, crit: 0.06, defense: 0, speed: 0, range: 15, taken: 1, cd: 0.95 },
+        Cryomancer: { hp: 18, mp: 45, defense: 3, taken: 0.92, attack: 6, speed: 0, range: 0, crit: 0, cd: 1 },
+        Templar: { hp: 30, defense: 5, attack: 8, taken: 0.90, speed: 0, range: 0, crit: 0, cd: 1, mp: 15 },
+        Priest: { hp: 10, mp: 50, manaRegen: 2.5, attack: 5, defense: 1, taken: 0.95, speed: 5, range: 25, crit: 0, cd: 0.9 },
+        Assassin: { hp: -5, attack: 11, crit: 0.12, cd: 0.88, speed: 10, defense: 0, taken: 1, range: 0, mp: 0 },
+        Shadowblade: { hp: 15, speed: 15, crit: 0.07, defense: 2, attack: 7, taken: 0.95, range: 10, cd: 0.92, mp: 10 },
+        Necromancer: { hp: 20, mp: 35, attack: 9, defense: 2, taken: 0.94, speed: 0, range: 10, crit: 0.03, cd: 1 },
+        Elementalist: { hp: 5, mp: 40, attack: 11, range: 20, crit: 0.05, defense: 0, taken: 1, speed: 5, cd: 0.92 }
       }[this.spec] || {};
-      this.maxHp = Math.round(base.maxHp + lv * (this.classId === 'swordsman' ? 14 : 9) + (weapon.hp || 0) + (armor.hp || 0) + (specMods.hp || 0) + (t.vigor || 0) * 12);
-      this.maxMp = Math.round(base.mana + lv * 5 + (weapon.mana || 0) + (armor.mana || 0) + (specMods.mana || 0) + (t.focus || 0) * 5);
+      this.maxHp = Math.round(base.maxHp + lv * (base.hpGrowth || (this.classId === 'swordsman' ? 14 : 9)) + (gear.hp || 0) + (petAura.hp || 0) + (specMods.hp || 0) + (t.vigor || 0) * 12);
+      this.maxMp = Math.round(base.mana + lv * 5 + (gear.mana || 0) + (petAura.mana || 0) + (specMods.mp || 0) + (t.focus || 0) * 5);
       this.finalStats = {
-        attack: base.attack + lv * 3 + (weapon.attack || 0) + (armor.attack || 0) + (specMods.attack || 0) + Math.round(base.attack * 0.04 * (t.power || 0)),
-        speed: clamp(base.speed + lv * 1.2 + (weapon.speed || 0) + (armor.speed || 0) + (specMods.speed || 0), 60, 210),
-        range: base.range + (weapon.range || 0) + (specMods.range || 0),
-        defense: Math.max(0, base.defense + lv * 0.6 + (weapon.defense || 0) + (armor.defense || 0) + (specMods.defense || 0) + (t.guard || 0) * 2),
-        crit: 0.10 + (weapon.crit || 0) + (armor.crit || 0) + (t.crit || 0) * 0.03 + (specMods.crit || 0),
-        manaRegen: base.manaRegen + lv * 0.3 + (weapon.manaRegen || 0) + (armor.manaRegen || 0) + (t.focus || 0) * 0.5,
+        attack: base.attack + lv * 3 + (gear.attack || 0) + (petAura.attack || 0) + (specMods.attack || 0) + Math.round(base.attack * 0.04 * (t.power || 0)),
+        speed: clamp(base.speed + lv * 1.2 + (gear.speed || 0) + (petAura.speed || 0) + (specMods.speed || 0), 60, 220),
+        range: base.range + (gear.range || 0) + (petAura.range || 0) + (specMods.range || 0),
+        defense: Math.max(0, base.defense + lv * 0.6 + (gear.defense || 0) + (petAura.defense || 0) + (specMods.defense || 0) + (t.guard || 0) * 2),
+        crit: 0.10 + (gear.crit || 0) + (petAura.crit || 0) + (t.crit || 0) * 0.03 + (specMods.crit || 0),
+        manaRegen: base.manaRegen + (this.level || 1) * 0.3 + (gear.manaRegen || 0) + (petAura.manaRegen || 0) + (specMods.manaRegen || 0) + (t.focus || 0) * 0.5,
         cooldownMult: (1 - (t.haste || 0) * 0.04) * (specMods.cd || 1),
         damageTakenMult: (1 - (t.guard || 0) * 0.04) * (specMods.taken || 1)
       };
@@ -2572,7 +2759,8 @@
       if (this.dashTime > 0) {
         this.dashTime -= dt;
         const dashSpeed = 520;
-        game.tryMove(this, Math.cos(this.facing) * dashSpeed * dt, Math.sin(this.facing) * dashSpeed * dt);
+        const dashAngle = Number.isFinite(this.dashDir) ? this.dashDir : this.facing;
+        game.tryMove(this, Math.cos(dashAngle) * dashSpeed * dt, Math.sin(dashAngle) * dashSpeed * dt);
         if (!movingInput) {
           this.walkTimer += dt;
           this.walkFrame = playerGaitFrame(this.walkTimer, this.finalStats.speed, true);
@@ -2679,6 +2867,8 @@
                 : ['#9ce7ff', '#d7b8ff', '#ff9c42', '#e7b8ff'];
       this.playSkillAnim(game, def, fxColors[index]);
       game.log(`${this.name} used ${def.name}!`, fxColors[index]);
+      // Skills, like basic attacks, aim at the tapped mob or the nearest one.
+      game.acquireAutoLockTarget();
       this.aim = game.getAimAngle(this);
       const aim = this.aim;
       game.addSkillRune(this.x, this.y + 2, index, fxColors[index], aim);
@@ -2687,6 +2877,7 @@
       if (this.classId === 'swordsman') {
         if (index === 0) { // Dash Strike
           this.facing = aim;
+          this.dashDir = aim;
           this.dashTime = 0.20;
           const tx = this.x + Math.cos(aim) * 95;
           const ty = this.y + Math.sin(aim) * 95;
@@ -2733,12 +2924,17 @@
             }));
           }
         } else if (index === 1) { // Roll Dodge
-          this.facing = aim;
+          let rollDir = aim;
+          const checkX = this.x + Math.cos(rollDir) * 26;
+          const checkY = this.y + Math.sin(rollDir) * 26;
+          if (game.isBlocked(checkX, checkY, this.radius)) rollDir += Math.PI;
+          this.facing = rollDir;
+          this.dashDir = rollDir;
           this.dashTime = 0.16;
           this.invuln = 0.65;
           game.effects.push(new Effect('ring', this.x, this.y - 6, { color: '#b9ffcb', radius: 12, endRadius: 44, life: 0.35 }));
           game.effects.push(new Effect('line', this.x, this.y - 8, {
-            color: '#b9ffcb', x2: this.x + Math.cos(aim) * 70, y2: this.y - 8 + Math.sin(aim) * 70,
+            color: '#b9ffcb', x2: this.x + Math.cos(rollDir) * 70, y2: this.y - 8 + Math.sin(rollDir) * 70,
             life: 0.22, size: 4
           }));
         } else if (index === 2) { // Poison Arrow
@@ -2787,8 +2983,30 @@
         if (index === 0) { // Shadow Strike
           // A cursor-confirmed skill always uses the clicked point, never a lock.
           const point = game.clampSkillPoint(index, game.getAimPoint());
+          const locked = game.currentLockTarget();
           let tx = point.x;
           let ty = point.y;
+          if (locked && dist(point, locked) < 70) {
+            tx = locked.x - Math.cos(locked.facing || 0) * 28;
+            ty = locked.y - Math.sin(locked.facing || 0) * 28;
+          }
+          const pixelW = game.zone ? game.zone.pixelW : VIEW_W;
+          const pixelH = game.zone ? game.zone.pixelH : VIEW_H;
+          tx = clamp(tx, 40, Math.max(40, pixelW - 40));
+          ty = clamp(ty, 40, Math.max(40, pixelH - 40));
+          // Stop at the first solid tile instead of teleporting through walls.
+          let nx = this.x;
+          let ny = this.y;
+          const steps = Math.max(1, Math.ceil(dist(this, { x: tx, y: ty }) / 10));
+          for (let i = 1; i <= steps; i++) {
+            const px = lerp(this.x, tx, i / steps);
+            const py = lerp(this.y, ty, i / steps);
+            if (game.isBlocked(px, py, this.radius)) break;
+            nx = px;
+            ny = py;
+          }
+          tx = nx;
+          ty = ny;
           game.effects.push(new Effect('line', this.x, this.y - 8, { color: '#52ffb8', x2: tx, y2: ty - 8, life: 0.22, size: 4 }));
           this.x = tx; this.y = ty;
           game.effects.push(new Effect('slash', tx, ty - 10, { element: 'steel', angle: aim, radius: 34, life: 0.24 }));
@@ -2859,7 +3077,9 @@
           for (let s = 0; s <= 1; s += 0.05) {
             const px = lerp(this.x, tx, s);
             const py = lerp(this.y, ty, s);
-            if (!game.isBlocked(px, py, this.radius)) { nx = px; ny = py; }
+            if (game.isBlocked(px, py, this.radius)) break;
+            nx = px;
+            ny = py;
           }
           const oldX = this.x;
           const oldY = this.y;
@@ -2973,8 +3193,10 @@
     }
 
     equip(item, slot, game) {
-      if (!item || item.slot !== slot || slot === 'consumable' || !itemCanEquip(item, this.classId)) return false;
+      if (!item || item.slot !== slot || !VALID_EQUIP_SLOTS.includes(slot) || !itemCanEquip(item, this.classId)) return false;
       const old = this.equipment[slot];
+      // Never delete the old gear when the bag is full.
+      if (old && !this.canAddItem(old)) return false;
       this.equipment[slot] = item;
       if (old) this.addItem(old);
       this.recalculateStats();
@@ -2995,14 +3217,22 @@
         game.teleportToVillage();
         return true;
       }
-      if (this.hp >= this.maxHp) {
-        game.addFloater(this.x, this.y - 40, 'HP is full', '#9aa6bd', 10);
+      const healAmount = Number(item.heal) || 0;
+      const manaAmount = Number(item.mana) || 0;
+      const canHeal = healAmount > 0 && this.hp < this.maxHp;
+      const canRestoreMana = manaAmount > 0 && this.mp < this.maxMp;
+      if (!canHeal && !canRestoreMana) {
+        game.addFloater(this.x, this.y - 40, healAmount ? 'HP is full' : 'MP is full', '#9aa6bd', 10);
         return false;
       }
-      const healed = this.heal(item.heal || 50);
+      const healed = canHeal ? this.heal(healAmount) : 0;
+      const restored = canRestoreMana ? Math.min(manaAmount, this.maxMp - this.mp) : 0;
+      if (restored) this.mp += restored;
       if ((item.quantity || 1) > 1) item.quantity--;
       else this.inventory.splice(index, 1);
-      game.addFloater(this.x, this.y - 42, `+${healed}`, '#7bff9b', 14);
+      const label = healed && restored ? `+${healed} HP  +${restored} MP`
+        : restored ? `+${restored} MP` : `+${healed}`;
+      game.addFloater(this.x, this.y - 42, label, restored ? '#7bc8ff' : '#7bff9b', 14);
       game.audio.sfx('pickup');
       game.save();
       return true;
@@ -3939,11 +4169,18 @@
     };
   }
 
+  // Server-only zones (frost_cave, volcano, swamp, arena) have no offline spawn
+  // or enemy tables. Map them to a fully defined offline zone instead of crashing.
+  function offlineZoneId(zoneId) {
+    return ZONE_SPAWN[zoneId] && PORTAL_DEFS[zoneId] && ZONE_ENEMY_COUNTS[zoneId] && ZONE_POINTS[zoneId]
+      ? zoneId : 'village';
+  }
+
   function nearSpecial(zoneId, x, y, minDist) {
-    for (const p of ZONE_POINTS[zoneId]) {
+    for (const p of ZONE_POINTS[zoneId] || []) {
       if (Math.hypot(p.x - x, p.y - y) < minDist) return true;
     }
-    for (const p of PORTAL_DEFS[zoneId]) {
+    for (const p of PORTAL_DEFS[zoneId] || []) {
       if (Math.hypot(p.x - x, p.y - y) < minDist) return true;
       if (Math.hypot(p.arrive.x - x, p.arrive.y - y) < minDist) return true;
     }
@@ -4174,6 +4411,7 @@
     constructor(game) {
       this.game = game;
       this.socket = null;
+      this._aborted = false;
       this.online = false;       // true after login/register
       this.connected = false;    // WebSocket open
       this.connecting = false;
@@ -4197,6 +4435,7 @@
     connect() {
       if (this.socket && (this.connected || this.connecting)) return;
       this.connecting = true;
+      this._aborted = false;
       try {
         this.socket = new WebSocket(this.url);
       } catch (err) {
@@ -4215,6 +4454,7 @@
         catch (err) { console.error('Bad server message', err); }
       });
       this.socket.addEventListener('close', () => {
+        if (this._aborted) return;
         this.connected = false;
         this.connecting = false;
         this.online = false;
@@ -4230,6 +4470,20 @@
       if (this.token) msg.token = this.token;
       this.socket.send(JSON.stringify(msg));
       return true;
+    }
+
+    // Stop processing a dead/stalled connection so late packets cannot mix
+    // authoritative state into the offline simulation.
+    abort() {
+      this._aborted = true;
+      this.online = false;
+      this.connected = false;
+      this.connecting = false;
+      this.joined = false;
+      if (this.socket) {
+        try { this.socket.close(); } catch (err) { /* already closed */ }
+        this.socket = null;
+      }
     }
   }
 
@@ -4276,8 +4530,9 @@
       this.playerInCombat = 0;
       this.autoSaveTimer = 0;
       this.enemySpawnTimer = 0;
-      this.lockedTargetId = null; // Mob lock-on target (works offline and online).
+      this.setLockTarget(null); // Mob lock-on target (works offline and online).
       this.lockTargetAt = -Infinity;
+      this.lockIsExplicit = false; // True only when the player tapped/cycled a specific mob.
       this.pendingSkillIndex = null;
       this.familiar = null;
       this._lastStateAt = 0;
@@ -4310,6 +4565,8 @@
       this.bossDefeated = false;
       this.shopStock = makeShopStock(this.selectedClass);
 
+      this.achievements = { progress: {}, unlocked: [], claimed: [] };
+      this.dailyQuests = { date: '', quests: [] };
       this.chatMessages = [];
       this.chatOpen = false;
       this.chatMinimized = false;
@@ -4767,10 +5024,12 @@
         }
       }
 
-      // Mouse click on the world = basic attack.
+      // Clicking/tapping a mob selects it; otherwise attacks use the nearest mob.
       if (this.state === 'playing' && !this.paused && !this.panel && !this.chatOpen &&
           !(p.x < 370 && p.y > VIEW_H - 140)) {
         if (this.player) {
+          const tapped = this.enemyAtPoint({ x: p.x + this.camX, y: p.y + this.camY });
+          if (tapped) this.setLockTarget(tapped, true);
           this.acquireAutoLockTarget();
           this.player.aim = this.getAimAngle(this.player);
           if (this.network.online) {
@@ -5003,30 +5262,67 @@
       return target && target.alive !== false ? target : null;
     }
 
-    acquireAutoLockTarget(maxDistance = 500) {
-      const current = this.currentLockTarget();
-      if (current) return current;
-      this.lockedTargetId = null;
-      this.lockTargetAt = -Infinity;
-      if (!this.player) return null;
-      let nearest = null;
-      let nearestDistance = maxDistance;
+    // Mob under a world-space point. Sprites are drawn with their feet at (x, y),
+    // so the tap area covers the whole sprite, not just the tiny collision circle.
+    enemyAtPoint(point, extra = 8) {
+      let best = null;
+      let bestDistance = Infinity;
       for (const enemy of this.targetableEnemies()) {
-        const distance = dist(this.player, enemy);
-        if (distance <= nearestDistance) {
-          nearest = enemy;
-          nearestDistance = distance;
+        const scale = String(enemy.type || '').includes('boss') ? 5 : MONSTER_SPRITE_SCALE;
+        const spriteW = 16 * scale;
+        const spriteH = 16 * scale;
+        if (point.x < enemy.x - spriteW / 2 - extra || point.x > enemy.x + spriteW / 2 + extra ||
+            point.y < enemy.y - spriteH - extra || point.y > enemy.y + extra) continue;
+        const centerY = enemy.y - spriteH / 2;
+        const distance = Math.hypot(point.x - enemy.x, point.y - centerY);
+        if (distance < bestDistance) {
+          best = enemy;
+          bestDistance = distance;
         }
       }
-      this.lockedTargetId = nearest ? nearest.id : null;
-      return nearest;
+      return best;
     }
 
-    // A lock chosen after the last pointer move takes priority. Moving the cursor
-    // always hands aiming back to the player, which fixes "aim ignores cursor".
+    setLockTarget(enemy, explicit = true) {
+      if (!enemy || enemy.alive === false) {
+        this.lockedTargetId = null;
+        this.lockTargetAt = -Infinity;
+        this.lockIsExplicit = false;
+        return null;
+      }
+      this.lockedTargetId = enemy.id;
+      this.lockTargetAt = this.time;
+      this.lockIsExplicit = !!explicit;
+      return enemy;
+    }
+
+    // A tapped/cycled mob stays selected. Otherwise every attack and skill picks
+    // whichever living mob is currently closest to the player.
+    acquireAutoLockTarget(maxDistance = 500) {
+      const current = this.currentLockTarget();
+      if (current && this.lockIsExplicit) return current;
+      let nearest = null;
+      let nearestDistance = maxDistance;
+      if (this.player) {
+        for (const enemy of this.targetableEnemies()) {
+          const distance = dist(this.player, enemy);
+          if (distance <= nearestDistance) {
+            nearest = enemy;
+            nearestDistance = distance;
+          }
+        }
+      }
+      if (nearest) return this.setLockTarget(nearest, false);
+      if (current) return current;
+      this.setLockTarget(null);
+      this.lockTargetAt = -Infinity;
+      this.lockIsExplicit = false;
+      return null;
+    }
+
+    // Attacks and skills always aim at the selected/nearest mob when one exists.
     lockAimActive() {
-      const target = this.currentLockTarget();
-      return !!target && this.lockTargetAt >= this.pointer.lastMove;
+      return !!this.currentLockTarget();
     }
 
     getAimPoint() {
@@ -5057,6 +5353,7 @@
 
     activateSkill(index) {
       if (!this.player || !this.player.alive || this.panel || this.paused) return;
+      this.acquireAutoLockTarget();
       if (!this.skillNeedsAim(index)) {
         this.pendingSkillIndex = null;
         if (this.network.online) this.network.send({ type: 'skill', index, lockTargetId: this.lockedTargetId });
@@ -5108,12 +5405,12 @@
     skillAimPoint() {
       if (!this.player || this.pendingSkillIndex === null) return this.rawAimPoint();
       const index = this.pendingSkillIndex;
-      if (this.pendingAimFromPointer && this.pointer.inside) {
-        return this.clampSkillPoint(index, this.rawAimPoint());
-      }
       if (this.lockAimActive()) {
         const target = this.currentLockTarget();
         return this.clampSkillPoint(index, { x: target.x, y: target.y - 8 });
+      }
+      if (this.pendingAimFromPointer && this.pointer.inside) {
+        return this.clampSkillPoint(index, this.rawAimPoint());
       }
       if (this.pointer.inside) return this.clampSkillPoint(index, this.rawAimPoint());
       const angle = this.player.aim || this.player.facing || 0;
@@ -5127,7 +5424,13 @@
     confirmSkillTarget(point) {
       if (!this.player || this.pendingSkillIndex === null) return;
       const index = this.pendingSkillIndex;
-      const worldPoint = this.clampSkillPoint(index, { x: point.x + this.camX, y: point.y + this.camY });
+      const rawPoint = { x: point.x + this.camX, y: point.y + this.camY };
+      const tapped = this.enemyAtPoint(rawPoint);
+      if (tapped) this.setLockTarget(tapped, true);
+      this.acquireAutoLockTarget();
+      const target = this.currentLockTarget();
+      const wanted = target ? { x: target.x, y: target.y - 8 } : rawPoint;
+      const worldPoint = this.clampSkillPoint(index, wanted);
       this.pointer.x = worldPoint.x - this.camX;
       this.pointer.y = worldPoint.y - this.camY;
       this.pointer.inside = true;
@@ -5137,8 +5440,8 @@
       const aim = Math.atan2(worldPoint.y - (this.player.y - 10), worldPoint.x - this.player.x);
       this.player.aim = aim;
       if (this.network.online) {
-        // Explicit cursor point wins over any lock target on the server too.
-        this.network.send({ type: 'skill', index, aim, aimX: worldPoint.x, aimY: worldPoint.y, lockTargetId: null });
+        // Send the target position so the server hits the same mob as the client.
+        this.network.send({ type: 'skill', index, aim, aimX: worldPoint.x, aimY: worldPoint.y, lockTargetId: target ? target.id : null });
       } else {
         this.player.useSkill(index, this);
       }
@@ -5174,19 +5477,13 @@
 
     cycleLockTarget(dir = 1) {
       if (!this.player) return;
-      const aim = this.selectionAimPoint();
       const candidates = this.targetableEnemies()
-        .map(e => ({
-          enemy: e,
-          distance: dist(this.player, e),
-          score: Math.hypot(e.x - aim.x, e.y - aim.y)
-        }))
+        .map(enemy => ({ enemy, distance: dist(this.player, enemy) }))
         .filter(c => c.distance < 820)
-        .sort((a, b) => a.score - b.score || a.distance - b.distance);
+        .sort((a, b) => a.distance - b.distance);
 
       if (!candidates.length) {
-        this.lockedTargetId = null;
-        this.lockTargetAt = -Infinity;
+        this.setLockTarget(null);
         this.log('No target in range.', '#ff9b9b');
         return;
       }
@@ -5195,8 +5492,7 @@
       index = index < 0
         ? (dir > 0 ? 0 : candidates.length - 1)
         : (index + dir + candidates.length) % candidates.length;
-      this.lockedTargetId = candidates[index].enemy.id;
-      this.lockTargetAt = this.time;
+      this.setLockTarget(candidates[index].enemy, true);
       this.audio.sfx('ui');
       this.log(`Target locked: ${this.enemyLabel(candidates[index].enemy)}`, '#ffd75e');
     }
@@ -5208,8 +5504,7 @@
 
     unlockTarget() {
       if (this.lockedTargetId === null || this.lockedTargetId === undefined) return;
-      this.lockedTargetId = null;
-      this.lockTargetAt = -Infinity;
+      this.setLockTarget(null);
       this.audio.sfx('ui');
       this.log('Target released.', '#9aa6bd');
     }
@@ -5218,8 +5513,7 @@
       if (this.lockedTargetId === null || this.lockedTargetId === undefined) return;
       const target = this.currentLockTarget();
       if (!target || !this.player || dist(this.player, target) > 900) {
-        this.lockedTargetId = null;
-        this.lockTargetAt = -Infinity;
+        this.setLockTarget(null);
       }
     }
 
@@ -5249,7 +5543,9 @@
       this._stallCheckTimer += dt;
       if (this._stallCheckTimer >= 1) {
         this._stallCheckTimer = 0;
-        if (net.joined && this._lastStateAt && performance.now() - this._lastStateAt > 9000) {
+        // Also covers "auth arrived but join/init never did" – the old check
+        // required net.joined and never fired in that case.
+        if (net.online && this._lastStateAt && performance.now() - this._lastStateAt > 9000) {
           this._fallbackToOfflineFromNetwork('Server stopped responding – continuing offline.');
           return;
         }
@@ -5297,13 +5593,18 @@
       if (canMove && len > 0.05) {
         p.facing = Math.atan2(dy, dx);
         if (p.dashTime <= 0) {
-          const speed = p.finalStats.speed * (p.shieldTime > 0 ? 0.55 : 1);
+          const speed = p.finalStats.speed * (p.shieldTime > 0 ? 0.55 : 1) * (p.hasteTime > 0 ? 1.3 : 1);
           this.tryMove(p, dx * speed * dt, dy * speed * dt);
         }
         p.walkTimer += dt;
         p.walkFrame = playerGaitFrame(p.walkTimer, p.finalStats.speed, p.dashTime > 0);
       } else {
         p.walkFrame = 0;
+      }
+
+      if (p.dashTime > 0) {
+        const dashAngle = Number.isFinite(p.dashDir) ? p.dashDir : p.facing;
+        this.tryMove(p, Math.cos(dashAngle) * 520 * dt, Math.sin(dashAngle) * 520 * dt);
       }
 
       if (Number.isFinite(p.tx) && Number.isFinite(p.ty)) {
@@ -5359,6 +5660,10 @@
       if (data.skillAnimName) p.skillAnimName = data.skillAnimName;
       if (Number.isFinite(data.familiarTime)) p.familiarTime = Math.max(0, data.familiarTime);
       if (Number.isFinite(data.hasteTime)) p.hasteTime = Math.max(0, data.hasteTime);
+      if (Number.isFinite(data.shieldTime)) p.shieldTime = Math.max(0, data.shieldTime);
+      if (Number.isFinite(data.invuln)) p.invuln = Math.max(0, data.invuln);
+      if (Number.isFinite(data.dashTime)) p.dashTime = Math.max(0, data.dashTime);
+      if (Number.isFinite(data.dashDir)) p.dashDir = data.dashDir;
       if (data.spec !== undefined) p.spec = data.spec || '';
       if (data.stats && typeof data.stats === 'object') {
         p.finalStats = Object.assign({}, p.finalStats, data.stats);
@@ -5381,6 +5686,7 @@
       if (!char || typeof char !== 'object') return;
       const classId = CLASS_DATA[char.classId] ? char.classId
         : (this.player && this.player.classId) || this.selectedClass || 'swordsman';
+      this.selectedClass = classId;
       const zoneId = char.zoneId || this.zoneId || 'forest';
       const fallback = ZONE_SPAWN[zoneId] || ZONE_SPAWN.forest;
       const x = Number.isFinite(char.x) ? char.x : fallback.x;
@@ -5421,6 +5727,8 @@
       p.pvpRating = Number(char.pvpRating) || 1000;
       p.pvpWins = Number(char.pvpWins) || 0;
       p.pvpLosses = Number(char.pvpLosses) || 0;
+      p.bossKills = Number(char.bossKills) || 0;
+      p.zonesVisited = Array.isArray(char.zonesVisited) ? char.zonesVisited.slice(0, 20) : p.zonesVisited;
       p.pet = char.pet || null;
       if (char.achievements) this.achievements = char.achievements;
       if (char.dailyQuests) this.dailyQuests = char.dailyQuests;
@@ -5494,7 +5802,7 @@
       this.zones[zoneId] = zone;
       this.network.roomId = init.roomId || '';
       this.network.joined = true;
-      this.lockedTargetId = null;
+      this.setLockTarget(null);
       this.portals = (Array.isArray(init.portals) ? init.portals : []).map(p => Object.assign({}, p, { radius: 30 }));
       // Keep the same NPC coordinates as the server so F opens shop/quest online.
       this.npcs = zoneId === 'forest' ? NPC_DEFS.map(n => new Npc(n.type, n.name, n.x, n.y))
@@ -5517,6 +5825,8 @@
     onNetworkMessage(msg) {
       if (!msg || typeof msg !== 'object' || !msg.type) return;
       const net = this.network;
+      // After falling back to offline, ignore late packets from the old socket.
+      if (!net.online && !['auth', 'error', 'pong'].includes(msg.type)) return;
       switch (msg.type) {
         case 'auth': {
           this._clearConnectTimer();
@@ -5534,9 +5844,9 @@
           break;
         }
         case 'passwordSet': {
-          if (msg.success && msg.newPassword) {
+          if (msg.success) {
             const user = this.session ? this.session.username : (this.player ? this.player.name : 'Hero');
-            this._saveSession(user, msg.newPassword);
+            this._saveSession(user, this.accountPasswordInput || (this.session && this.session.password) || user);
             this.accountPasswordInput = '';
             this.log('★ Password updated and saved on this device!', '#8ee6ff');
             this.audio.sfx('level');
@@ -5566,12 +5876,14 @@
         }
         case 'trade_state': {
           this.tradeState = msg;
+          this.tradeInvite = null;
           this.panel = 'trade';
           break;
         }
         case 'trade_closed': {
           if (this.panel === 'trade') this.panel = null;
           this.tradeState = null;
+          this.tradeInvite = null;
           this.log(`Trade closed (${msg.reason}).`, '#ffd75e');
           break;
         }
@@ -6080,7 +6392,7 @@
 
     // Drop the half-online state instead of leaving remote actors frozen in place.
     _fallbackToOfflineFromNetwork(reason) {
-      this.network.online = false;
+      this.network.abort();
       this.network.joined = false;
       this.network.token = '';
       this.network.playerId = null;
@@ -6092,10 +6404,10 @@
       this.party = [];
       this.familiar = null;
       this.pendingSkillIndex = null;
-      this.lockedTargetId = null;
+      this.setLockTarget(null);
       this.lockTargetAt = -Infinity;
-      if (!this.zones[this.zoneId]) this.zoneId = 'village';
-      this.zone = this.zones[this.zoneId];
+      this.zoneId = offlineZoneId(this.zoneId);
+      this.zone = this.zones[this.zoneId] || this.zones.forest;
       if (this.player) {
         const maxX = this.zone.pixelW - 40;
         const maxY = this.zone.pixelH - 40;
@@ -6116,6 +6428,10 @@
       const spawn = ZONE_SPAWN.village;
       const name = (this.nameInput || '').trim() || 'Hero';
       this.player = new Player(this.selectedClass, name, spawn.x, spawn.y);
+      this.player.pet = { type: 'wolf', name: 'Pixel Fox', level: 1 };
+      this.player.recalculateStats(false);
+      this.player.hp = this.player.maxHp;
+      this.player.mp = this.player.maxMp;
       this.pet = new Pet(spawn.x + 24, spawn.y + 18);
       this.quest = freshQuest();
       this.bossDefeated = false;
@@ -6124,7 +6440,7 @@
       this.party = [];
       this.shopStock = makeShopStock(this.selectedClass);
       this.familiar = null;
-      this.lockedTargetId = null;
+      this.setLockTarget(null);
       this.lockTargetAt = -Infinity;
       this._lastStateAt = 0;
       this.resetZoneActors();
@@ -6161,7 +6477,7 @@
       this.panel = null;
       this.chatOpen = false;
       this.textField = null;
-      this.lockedTargetId = null;
+      this.setLockTarget(null);
     }
 
     readTutorialStatus() {
@@ -6252,6 +6568,18 @@
         mp: this.player.mp,
         skillPoints: this.player.skillPoints,
         skillRanks: this.player.skillRanks,
+        talents: this.player.talents,
+        spec: this.player.spec,
+        materials: this.player.materials,
+        title: this.player.title,
+        pet: this.player.pet || null,
+        pvpRating: this.player.pvpRating,
+        pvpWins: this.player.pvpWins,
+        pvpLosses: this.player.pvpLosses,
+        bossKills: this.player.bossKills,
+        zonesVisited: this.player.zonesVisited,
+        achievements: this.achievements,
+        dailyQuests: this.dailyQuests,
         inventory: this.player.inventory,
         equipment: this.player.equipment,
         quest: this.quest,
@@ -6282,7 +6610,9 @@
       if (!data) { this.log('No saved game found.', '#ff9b9b'); return; }
       this.audio.unlock();
       const classId = CLASS_DATA[data.classId] ? data.classId : 'swordsman';
-      this.zoneId = this.zones[data.zoneId] ? data.zoneId : 'forest';
+      this.zoneId = this.zones[data.zoneId] && offlineZoneId(data.zoneId) === data.zoneId ? data.zoneId : 'forest';
+      this.zone = this.zones[this.zoneId] || this.zones.forest;
+      this.minimapCache = null;
       const fallback = ZONE_SPAWN[this.zoneId];
       const player = new Player(classId, data.name, Number.isFinite(data.x) ? data.x : fallback.x, Number.isFinite(data.y) ? data.y : fallback.y);
       player.level = Math.max(1, data.level || 1);
@@ -6291,19 +6621,34 @@
       player.gold = data.gold || 0;
       player.skillPoints = data.skillPoints || 0;
       player.skillRanks = normalizeSkillRanks(data.skillRanks);
+      player.talents = Object.assign(player.talents, data.talents || {});
+      player.spec = data.spec || '';
+      player.materials = Object.assign(player.materials, data.materials || {});
+      player.title = data.title || player.title;
+      player.pvpRating = Number(data.pvpRating) || player.pvpRating;
+      player.pvpWins = Number(data.pvpWins) || 0;
+      player.pvpLosses = Number(data.pvpLosses) || 0;
+      player.bossKills = Number(data.bossKills) || 0;
+      player.zonesVisited = Array.isArray(data.zonesVisited) ? data.zonesVisited.slice(0, 20) : player.zonesVisited;
+      player.pet = data.pet && typeof data.pet === 'object'
+        ? { type: data.pet.type || 'wolf', name: data.pet.name || 'Pixel Fox', level: Math.max(1, Number(data.pet.level) || 1), equipment: data.pet.equipment || {} }
+        : null;
+      if (data.achievements && typeof data.achievements === 'object') this.achievements = data.achievements;
+      if (data.dailyQuests && typeof data.dailyQuests === 'object') this.dailyQuests = data.dailyQuests;
       player.inventory = Array.isArray(data.inventory) ? compactInventory(data.inventory.map(item => normalizeItem(item, classId)).filter(Boolean)) : [];
       const eq = data.equipment || {};
-      player.equipment = {
-        weapon: normalizeItem(eq.weapon, classId),
-        armor: normalizeItem(eq.armor, classId)
-      };
-      if (!player.equipment.weapon || player.equipment.weapon.slot !== 'weapon') player.equipment.weapon = starterItems(classId).equipment.weapon;
-      if (!player.equipment.armor || player.equipment.armor.slot !== 'armor') player.equipment.armor = starterItems(classId).equipment.armor;
+      const starterEq = starterItems(classId).equipment;
+      player.equipment = {};
+      for (const slot of VALID_EQUIP_SLOTS) {
+        const item = normalizeItem(eq[slot], classId);
+        player.equipment[slot] = item && item.slot === slot && itemCanEquip(item, classId) ? item : starterEq[slot];
+      }
       player.recalculateStats(false);
       player.hp = clamp(Number.isFinite(data.hp) ? data.hp : player.maxHp, 1, player.maxHp);
       player.mp = clamp(Number.isFinite(data.mp) ? data.mp : player.maxMp, 0, player.maxMp);
       this.player = player;
       this.pet = new Pet(player.x + 24, player.y + 18);
+      if (player.pet) this.pet.name = player.pet.name || 'Pixel Fox';
       const savedQuest = data.quest && typeof data.quest === 'object' ? data.quest : {};
       this.quest = normalizeQuestProgress(savedQuest);
       this.bossDefeated = !!data.bossDefeated;
@@ -6312,7 +6657,7 @@
       this.playTime = data.playTime || 0;
       this.shopStock = makeShopStock(classId);
       this.party = [];
-      this.lockedTargetId = null;
+      this.setLockTarget(null);
       if (this.isBlocked(player.x, player.y, player.radius)) {
         player.x = fallback.x;
         player.y = fallback.y;
@@ -6333,20 +6678,20 @@
 
     resetZoneActors() {
       this.zone = this.zones[this.zoneId];
-      this.lockedTargetId = null;
+      this.setLockTarget(null);
       this.enemies = [];
       this.pickups = [];
       this.projectiles = [];
       this.effects = [];
       this.floaters = [];
       this.pendingMeteors = [];
-      this.portals = PORTAL_DEFS[this.zoneId].map(p => Object.assign({}, p, { radius: 30 }));
+      this.portals = (PORTAL_DEFS[this.zoneId] || []).map(p => Object.assign({}, p, { radius: 30 }));
       this.npcs = this.zoneId === 'forest' ? NPC_DEFS.map(n => new Npc(n.type, n.name, n.x, n.y))
         : this.zoneId === 'village' ? VILLAGE_NPC_DEFS.map(n => new Npc(n.type, n.name, n.x, n.y)) : [];
 
-      const counts = ZONE_ENEMY_COUNTS[this.zoneId];
-      const mul = ZONE_MUL[this.zoneId];
-      const spawn = ZONE_SPAWN[this.zoneId];
+      const counts = ZONE_ENEMY_COUNTS[this.zoneId] || {};
+      const mul = ZONE_MUL[this.zoneId] || 1;
+      const spawn = ZONE_SPAWN[this.zoneId] || ZONE_SPAWN.village;
       for (const [type, count] of Object.entries(counts)) {
         const nearCount = Math.min(count, type === 'goblin' ? 2 : 4);
         for (let i = 0; i < count; i++) {
@@ -6497,8 +6842,11 @@
         const classWeapon = {
           swordsman: { name: 'Sovereign Blade', art: 'sword' },
           archer: { name: 'Sovereign Bow', art: 'bow' },
-          mage: { name: 'Sovereign Staff', art: 'staff' }
-        }[this.player.classId];
+          mage: { name: 'Sovereign Staff', art: 'staff' },
+          cleric: { name: 'Sovereign Mace', art: 'mace' },
+          rogue: { name: 'Sovereign Dagger', art: 'dagger' },
+          summoner: { name: 'Sovereign Tome', art: 'tome' }
+        }[this.player.classId] || { name: 'Sovereign Blade', art: 'sword' };
         const item = makeItem(
           isWeapon ? classWeapon.name : 'Boss-Slayer Charm',
           isWeapon ? 'weapon' : 'armor',
@@ -6588,19 +6936,20 @@
     findInteractable() {
       if (!this.player) return null;
       let best = null;
-      let bestD = 68;
+      let bestD = 84; // Boss chests are drawn larger than NPCs and portals.
       for (const chest of this.pickups) {
         if (!chest || chest.kind !== 'chest' || chest.collected || !this.canOpenBossChest(chest)) continue;
         const d = dist(this.player, chest);
         if (d < bestD) { best = { kind: 'chest', obj: chest }; bestD = d; }
       }
+      const npcRange = 68;
       for (const n of this.npcs) {
         const d = dist(this.player, n);
-        if (d < bestD) { best = { kind: 'npc', obj: n }; bestD = d; }
+        if (d < npcRange && d < bestD) { best = { kind: 'npc', obj: n }; bestD = d; }
       }
       for (const p of this.portals) {
         const d = dist(this.player, p);
-        if (d < bestD) { best = { kind: 'portal', obj: p }; bestD = d; }
+        if (d < npcRange && d < bestD) { best = { kind: 'portal', obj: p }; bestD = d; }
       }
       return best;
     }
@@ -6716,8 +7065,12 @@
       this.chatOpen = false;
       this.chatInput = '';
       if (!text) return;
-      if (this.network.online) this.network.send({ type: 'chat', text, channel: this.chatChannel || 'zone' });
-      this.log(`[You] ${text}`, '#ffffff');
+      if (this.network.online) {
+        // The server echoes chat back to every recipient (including the sender).
+        this.network.send({ type: 'chat', text, channel: this.chatChannel || 'zone' });
+      } else {
+        this.log(`[You] ${text}`, '#ffffff');
+      }
     }
 
     checkQuest() {
@@ -6856,16 +7209,22 @@
         else this.network.send({ type: 'potion' });
         return;
       }
-      let index = selected ? p.inventory.indexOf(selected)
-        : p.inventory.findIndex(item => item.slot === 'consumable' && item.heal > 0);
+      let index = selected ? p.inventory.indexOf(selected) : -1;
+      if (index < 0 && p.hp < p.maxHp) {
+        index = p.inventory.findIndex(item => item.slot === 'consumable' && Number(item.heal) > 0);
+      }
+      if (index < 0 && p.mp < p.maxMp) {
+        index = p.inventory.findIndex(item => item.slot === 'consumable' && Number(item.mana) > 0);
+      }
       if (index < 0) index = p.inventory.findIndex(item => item.slot === 'consumable' && item.teleportTo);
+      if (index < 0) index = p.inventory.findIndex(item => item.slot === 'consumable');
       if (index >= 0) p.usePotion(index, this);
     }
 
     quickUseItem(item, source) {
       const p = this.player;
       if (!p) return;
-      if (source.type === 'inv' && (item.slot === 'weapon' || item.slot === 'armor') && !itemCanEquip(item, p.classId)) {
+      if (source.type === 'inv' && VALID_EQUIP_SLOTS.includes(item.slot) && !itemCanEquip(item, p.classId)) {
         this.addFloater(p.x, p.y - 40, `${CLASS_DATA[item.classId]?.name || 'Other class'} only`, '#ff9b9b', 10);
         return;
       }
@@ -6886,7 +7245,7 @@
           p.recalculateStats();
           this.save();
         }
-      } else if (source.type === 'inv' && (item.slot === 'weapon' || item.slot === 'armor')) {
+      } else if (source.type === 'inv' && VALID_EQUIP_SLOTS.includes(item.slot)) {
         this.dropItem({ item, from: source }, { type: 'equip', slot: item.slot });
       }
     }
@@ -6918,9 +7277,15 @@
         const idx = p.inventory.findIndex(it => it.uid === item.uid);
         if (idx < 0) return;
         const old = p.equipment[target.slot];
+        if (old && !p.canAddItem(old)) {
+          this.addFloater(p.x, p.y - 40, 'Bag full', '#ff9b9b', 10);
+          return;
+        }
         p.inventory.splice(idx, 1);
         p.equipment[target.slot] = item;
         if (old) p.addItem(old);
+        p.recalculateStats();
+        this.save();
       } else if (target.type === 'inv') {
         if (drag.from.type === 'inv' && drag.from.index === target.index) return;
         if (drag.from.type === 'inv') {
@@ -6971,7 +7336,13 @@
       if (action.startsWith('selectPet:')) {
         const type = action.slice(10);
         if (this.network.online) this.network.send({ type: 'pet_select', petType: type });
-        else if (this.player) this.player.pet = { type, name: type, level: 1 };
+        else if (this.player) {
+          const names = { wolf: 'Dire Wolf', fairy: 'Moon Fairy', golem: 'Stone Golem', dragon: 'Pyro Drake' };
+          this.player.pet = { type, name: names[type] || type, level: 1 };
+          this.player.recalculateStats();
+          if (this.pet) this.pet.name = this.player.pet.name;
+          this.log(`Companion switched to ${this.player.pet.name}.`, '#8ee6ff');
+        }
         return;
       }
       if (action.startsWith('select:')) {
@@ -7123,6 +7494,11 @@
         case 'tradeLock': if (this.network.online) this.network.send({ type: 'trade_lock' }); break;
         case 'tradeConfirm': if (this.network.online) this.network.send({ type: 'trade_confirm' }); break;
         case 'tradeCancel': if (this.network.online) this.network.send({ type: 'trade_cancel' }); this.panel = null; break;
+        case 'tradeAccept':
+          if (this.tradeInvite && this.network.online) this.network.send({ type: 'trade_accept', fromId: this.tradeInvite.fromId });
+          this.tradeInvite = null;
+          break;
+        case 'tradeDecline': this.tradeInvite = null; break;
         case 'openAuction': this.panel = 'auction'; if (this.network.online) this.network.send({ type: 'auctionList' }); break;
         case 'openMail': this.panel = 'mail'; if (this.network.online) this.network.send({ type: 'mailList' }); break;
         case 'openGuild': this.panel = 'guild'; if (this.network.online) this.network.send({ type: 'guildInfo' }); break;
@@ -7237,8 +7613,15 @@
     // ---------- Main update loop ----------
 
     update(dt) {
+      this.dt = dt;
       this.time += dt;
       this.dayTime = (this.dayTime + dt) % DAY_LENGTH;
+      if (this.telegraphs && this.telegraphs.length) {
+        for (let i = this.telegraphs.length - 1; i >= 0; i--) {
+          this.telegraphs[i].time -= dt;
+          if (this.telegraphs[i].time <= 0) this.telegraphs.splice(i, 1);
+        }
+      }
       this.shake = Math.max(0, this.shake - dt * 16);
       this.playerInCombat = Math.max(0, this.playerInCombat - dt);
       if (this.state !== 'playing' || this.paused || this.panel) return;
@@ -7360,6 +7743,205 @@
       this.clickRegions.push({ x, y, w, h, action: 'focusText:' + focusName });
     }
 
+    // Compatibility wrapper used by the account panel.
+    textInput(x, y, w, h, focusName, value, maxLen = 60) {
+      this.drawTextField(x, y, w, h, '', value, focusName, maxLen);
+    }
+
+    // Shared shell for the online progression panels. Without these renderers
+    // opening Y/U/V/P or receiving a trade invite threw every frame and killed
+    // the animation loop (requestAnimationFrame is scheduled after render()).
+    listPanelShell(title, x = 150, y = 55, w = 660, h = 430) {
+      const ctx = this.ctx;
+      ctx.fillStyle = 'rgba(4,7,16,0.78)';
+      ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+      panel(ctx, x, y, w, h, title);
+      this.button(x + w - 100, y + 12, 90, 24, 'CLOSE', 'closePanel', { fontSize: 10 });
+      return { x, y, w, h };
+    }
+
+    drawAchievementsPanel() {
+      const ctx = this.ctx;
+      const { x, y } = this.listPanelShell('Achievements (Y)');
+      const defs = {
+        first_blood: ['First Blood', 'Defeat your first monster'],
+        monster_culler: ['Monster Culler', 'Slay 25 monsters'],
+        monster_bane: ['Bane of Beasts', 'Slay 100 monsters'],
+        boss_slayer: ['Boss Slayer', 'Defeat the cave boss'],
+        reach_lvl_5: ['Rising Adventurer', 'Reach level 5'],
+        reach_lvl_10: ['Hardened Hero', 'Reach level 10'],
+        reach_lvl_20: ['Legend of the Realm', 'Reach level 20'],
+        wealthy_1: ['Coin Pouch', 'Amass 200 gold'],
+        wealthy_2: ['Gold Hoarder', 'Amass 1,000 gold'],
+        wealthy_3: ['Realm Tycoon', 'Amass 5,000 gold'],
+        craft_enchant: ['Spark of Magic', 'Enchant gear to +1'],
+        zone_explorer: ['Grand Cartographer', 'Visit 5 zones'],
+        pvp_first_win: ['Arena Challenger', 'Win a PvP duel'],
+        pvp_champion: ['Arena Warlord', 'Win 10 PvP duels'],
+        beastmaster: ['Loyal Companion', 'Level a pet twice']
+      };
+      const data = this.achievements || {};
+      const unlocked = Array.isArray(data.unlocked) ? data.unlocked : [];
+      const claimed = Array.isArray(data.claimed) ? data.claimed : [];
+      ctx.font = '10px monospace';
+      ctx.textAlign = 'left';
+      let row = 0;
+      for (const [id, [name, desc]] of Object.entries(defs)) {
+        const lineY = y + 50 + row * 24;
+        const done = unlocked.includes(id);
+        const got = claimed.includes(id);
+        ctx.fillStyle = done ? (got ? '#7bed9f' : '#ffd75e') : '#8290aa';
+        ctx.fillText(`${done ? '★' : '☆'} ${name} — ${desc}`, x + 24, lineY);
+        if (done && !got) {
+          this.button(x + 540, lineY - 14, 100, 20, 'CLAIM', 'claimAch:' + id,
+            { color: '#3f7d55', border: '#8ee6a8', fontSize: 9 });
+        }
+        row++;
+      }
+      if (!row) {
+        ctx.fillStyle = '#8290aa';
+        ctx.fillText('Achievement data loads when you join the shared realm.', x + 24, y + 60);
+      }
+    }
+
+    drawDailyPanel() {
+      const ctx = this.ctx;
+      const { x, y } = this.listPanelShell('Daily Bounties (U)');
+      const quests = (this.dailyQuests && this.dailyQuests.quests) || [];
+      ctx.textAlign = 'left';
+      if (!quests.length) {
+        ctx.fillStyle = '#8290aa';
+        ctx.font = '11px monospace';
+        ctx.fillText('Daily bounties refresh at UTC midnight and load when online.', x + 24, y + 60);
+        return;
+      }
+      quests.slice(0, 8).forEach((q, i) => {
+        const lineY = y + 52 + i * 62;
+        ctx.font = 'bold 12px monospace';
+        ctx.fillStyle = q.claimed ? '#7bed9f' : '#ffd75e';
+        ctx.fillText(`${q.completed ? '✔' : '○'} ${q.title}`, x + 24, lineY);
+        ctx.font = '10px monospace';
+        ctx.fillStyle = '#c9d4e8';
+        ctx.fillText(String(q.desc || '').slice(0, 78), x + 24, lineY + 18);
+        ctx.fillStyle = '#8fa8d0';
+        ctx.fillText(`Progress ${q.progress || 0}/${q.target || 1}   Reward ${q.reward ? q.reward.gold : 0}g / ${q.reward ? q.reward.xp : 0}xp`, x + 24, lineY + 36);
+        if (q.completed && !q.claimed) {
+          this.button(x + 520, lineY + 10, 110, 24, 'CLAIM', 'claimDaily:' + q.id,
+            { color: '#3f7d55', border: '#8ee6a8', fontSize: 10 });
+        }
+      });
+    }
+
+    drawLeaderboardModalPanel() {
+      const ctx = this.ctx;
+      const { x, y } = this.listPanelShell('Leaderboard (V)');
+      const tabs = [['level', 'LEVEL'], ['gold', 'GOLD'], ['boss', 'BOSS'], ['pvp', 'PVP']];
+      const tab = this.leaderboardTab || 'level';
+      tabs.forEach(([id, label], i) => {
+        this.button(x + 24 + i * 120, y + 46, 110, 24, label, 'setLeadTab:' + id,
+          { color: id === tab ? '#5a4a86' : '#34405c', fontSize: 10 });
+      });
+      const entries = (this.leaderboardData && this.leaderboardData.entries) || [];
+      const valueKey = tab === 'gold' ? 'gold' : tab === 'boss' ? 'bossKills' : tab === 'pvp' ? 'pvpRating' : 'level';
+      ctx.font = 'bold 10px monospace';
+      ctx.fillStyle = '#9fb0cd';
+      ctx.textAlign = 'left';
+      ctx.fillText('RANK  HERO', x + 24, y + 92);
+      ctx.textAlign = 'right';
+      ctx.fillText(labelForLeaderboard(valueKey), x + x + 560, y + 92);
+      ctx.textAlign = 'left';
+      if (!entries.length) {
+        ctx.fillStyle = '#8290aa';
+        ctx.fillText('No rankings yet. Join the online realm to load the leaderboard.', x + 24, y + 120);
+        return;
+      }
+      entries.slice(0, 12).forEach((entry, i) => {
+        const lineY = y + 116 + i * 22;
+        ctx.fillStyle = entry.name === (this.player && this.player.name) ? '#8ee6ff' : '#c9d4e8';
+        ctx.font = '10px monospace';
+        ctx.fillText(`${String(i + 1).padStart(2, ' ')}   ${entry.name}`, x + 24, lineY);
+        ctx.textAlign = 'right';
+        ctx.fillText(String(entry[valueKey] ?? 0), x + 584, lineY);
+        ctx.textAlign = 'left';
+      });
+    }
+
+    drawTradePanel() {
+      const ctx = this.ctx;
+      const { x, y, w } = this.listPanelShell('Trade');
+      const state = this.tradeState;
+      if (!state) {
+        ctx.font = '11px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillStyle = '#8290aa';
+        ctx.fillText('No active trade session.', x + 24, y + 70);
+        return;
+      }
+      [state.p1, state.p2].forEach((side, i) => {
+        const sx = x + 24 + i * 310;
+        ctx.textAlign = 'left';
+        ctx.font = 'bold 12px monospace';
+        ctx.fillStyle = '#ffd75e';
+        ctx.fillText(side.name || `Player ${i + 1}`, sx, y + 60);
+        ctx.font = '10px monospace';
+        ctx.fillStyle = '#c9d4e8';
+        ctx.fillText(`Gold: ${side.gold || 0}   ${side.locked ? 'LOCKED' : 'editing'}${side.accepted ? '   ACCEPTED' : ''}`, sx, y + 82);
+        const items = (side.items || []).map(item => item && item.name).filter(Boolean);
+        wrappedText(ctx, items.length ? items.join(', ') : 'No items offered', sx, y + 104, 280, 14, 3);
+      });
+      this.button(x + 24, y + 320, 150, 30, 'LOCK OFFER', 'tradeLock', { color: '#3f7d55', fontSize: 10 });
+      this.button(x + 190, y + 320, 150, 30, 'CONFIRM TRADE', 'tradeConfirm', { color: '#5a4a86', fontSize: 10 });
+      this.button(x + 356, y + 320, 140, 30, 'CANCEL', 'tradeCancel', { color: '#713b43', fontSize: 10 });
+      this.button(x + w - 140, y + 320, 110, 30, 'CLOSE', 'closePanel', { color: '#34405c', fontSize: 10 });
+    }
+
+    drawPetsPanel() {
+      const ctx = this.ctx;
+      const { x, y } = this.listPanelShell('Companions (P)');
+      const defs = {
+        wolf: ['Dire Wolf', 'Bonus attack and speed. Fierce Bite.'],
+        fairy: ['Moon Fairy', 'Bonus mana and regeneration. Starlight Blessing.'],
+        golem: ['Stone Golem', 'Bonus defense and HP. Earth Slam.'],
+        dragon: ['Pyro Drake', 'Bonus crit and attack. Fire Breath.']
+      };
+      const pet = this.player && this.player.pet;
+      ctx.textAlign = 'left';
+      ctx.font = '11px monospace';
+      ctx.fillStyle = '#8ee6ff';
+      ctx.fillText(pet ? `Active: ${pet.name || pet.type}  Lv ${pet.level || 1}` : 'Active: none', x + 24, y + 58);
+      Object.entries(defs).forEach(([type, [name, desc]], i) => {
+        const lineY = y + 96 + i * 66;
+        ctx.font = 'bold 12px monospace';
+        ctx.fillStyle = pet && pet.type === type ? '#ffd75e' : '#c9d4e8';
+        ctx.fillText(name, x + 24, lineY);
+        ctx.font = '10px monospace';
+        ctx.fillStyle = '#9fb0cd';
+        ctx.fillText(desc, x + 24, lineY + 18);
+        this.button(x + 520, lineY - 14, 110, 24, 'SELECT', 'selectPet:' + type,
+          { color: pet && pet.type === type ? '#3f7d55' : '#34405c', fontSize: 10 });
+      });
+    }
+
+    promptTradeInvite(fromId, fromName) {
+      this.tradeInvite = { fromId, fromName: fromName || 'A player' };
+      this.log(`${this.tradeInvite.fromName} invited you to trade.`, '#ffd75e');
+    }
+
+    drawTradeInvitePrompt() {
+      const ctx = this.ctx;
+      const x = 330;
+      const y = 196;
+      const w = 300;
+      const h = 110;
+      panel(ctx, x, y, w, h, 'Trade Invitation');
+      ctx.textAlign = 'center';
+      ctx.font = '11px monospace';
+      ctx.fillStyle = '#c9d4e8';
+      ctx.fillText(`${this.tradeInvite.fromName} wants to trade with you.`, x + w / 2, y + 54);
+      this.button(x + 30, y + 72, 110, 26, 'ACCEPT', 'tradeAccept', { color: '#3f7d55', fontSize: 10 });
+      this.button(x + 160, y + 72, 110, 26, 'DECLINE', 'tradeDecline', { color: '#713b43', fontSize: 10 });
+    }
+
     render() {
       const ctx = this.ctx;
       this.syncNativeTextInputOverlay();
@@ -7420,6 +8002,7 @@
       else if (this.panel === 'account') this.drawAccountPanel();
 
       if (this.paused) this.drawPauseMenu();
+      if (this.tradeInvite && !this.panel && !this.paused) this.drawTradeInvitePrompt();
       if (this.input.mobile && !this.paused && !this.panel) {
         if (this.mobileMenuOpen) this.drawMobileMenu();
         else this.drawMobileControls();
@@ -7441,8 +8024,6 @@
       if (this.telegraphs && this.telegraphs.length > 0) {
         for (let i = this.telegraphs.length - 1; i >= 0; i--) {
           const t = this.telegraphs[i];
-          t.time -= this.dt || 0.05;
-          if (t.time <= 0) { this.telegraphs.splice(i, 1); continue; }
           const progress = 1 - (t.time / t.duration);
           ctx.save();
           ctx.strokeStyle = t.color || '#ff3838';
@@ -7977,6 +8558,14 @@
           ctx.font = 'bold 16px monospace';
           ctx.fillText(cd.toFixed(1), x + 35, y + 33);
         }
+        const hover = this.pointer.x >= x && this.pointer.x <= x + 70 &&
+          this.pointer.y >= y && this.pointer.y <= y + 62;
+        if (hover) {
+          ctx.strokeStyle = '#ffd75e';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(x - 1.5, y - 1.5, 73, 65);
+        }
+        this.clickRegions.push({ x, y, w: 70, h: 62, action: 'skill' + i });
       }
       if (this.pet) {
         ctx.font = '10px monospace';
@@ -8766,29 +9355,29 @@
       const h = 432;
       panel(ctx, x, y, w, h, `Shop - Merchant Mina (your gold: ${this.player.gold})`);
       this.shopStock.forEach((item, i) => {
-        const bx = x + 18 + (i % 2) * 290;
-        const by = y + 44 + Math.floor(i / 2) * 116;
+        const bx = x + 18 + (i % 3) * 192;
+        const by = y + 44 + Math.floor(i / 3) * 112;
         ctx.fillStyle = 'rgba(16,23,39,0.95)';
-        ctx.fillRect(bx, by, 274, 104);
+        ctx.fillRect(bx, by, 180, 104);
         ctx.strokeStyle = RARITY[item.rarity].color;
         ctx.lineWidth = 2;
-        ctx.strokeRect(bx + 1, by + 1, 272, 102);
+        ctx.strokeRect(bx + 1, by + 1, 178, 102);
         ctx.fillStyle = RARITY[item.rarity].color;
         ctx.globalAlpha = 0.18;
-        ctx.fillRect(bx + 8, by + 10, 24, 24);
+        ctx.fillRect(bx + 8, by + 10, 22, 22);
         ctx.globalAlpha = 1;
-        drawItemImage(ctx, item, bx + 8, by + 10, 24);
-        ctx.font = 'bold 12px monospace';
+        drawItemImage(ctx, item, bx + 8, by + 10, 22);
+        ctx.font = 'bold 11px monospace';
         ctx.fillStyle = RARITY[item.rarity].color;
-        ctx.fillText(item.name, bx + 40, by + 22);
-        ctx.font = '10px monospace';
+        ctx.fillText(item.name, bx + 34, by + 22, 138);
+        ctx.font = '9px monospace';
         ctx.fillStyle = '#c8d3ea';
         const roleText = item.classId ? `${CLASS_DATA[item.classId]?.name || item.classId} only | ` : '';
-        wrappedText(ctx, roleText + itemStatsText(item), bx + 40, by + 38, 222, 13, 2);
+        wrappedText(ctx, roleText + itemStatsText(item), bx + 10, by + 40, 160, 12, 3);
         ctx.fillStyle = '#ffd75e';
-        ctx.fillText(`${item.price}g`, bx + 10, by + 84);
-        this.button(bx + 172, by + 68, 90, 28, 'BUY', 'shopBuy' + i,
-          { color: this.player.gold >= item.price ? '#3f7d55' : '#4a3340' });
+        ctx.fillText(`${item.price}g`, bx + 10, by + 91);
+        this.button(bx + 92, by + 72, 76, 24, 'BUY', 'shopBuy' + i,
+          { color: this.player.gold >= item.price ? '#3f7d55' : '#4a3340', fontSize: 10 });
       });
       this.button(x + 232, y + 394, 140, 28, 'CLOSE (F)', 'closePanel', { color: '#34405c' });
     }

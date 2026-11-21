@@ -94,6 +94,7 @@ export function makeItem(name, slot, rarity = 'common', stats = {}, extra = {}) 
     icon: extra.icon || name[0] || '?',
     price: Math.max(1, Math.round(Number(extra.price) || (25 * RARITY[safeRarity].mult))),
     heal: Number(extra.heal) || 0,
+    mana: Number(extra.mana) || 0,
     quantity: Math.max(1, Math.floor(Number(extra.quantity) || 1)),
     teleportTo: extra.teleportTo || null,
     desc: String(extra.desc || ''),
@@ -136,6 +137,7 @@ export function normalizeItem(raw, defaultClassId = null) {
     icon: raw.icon,
     price: raw.price,
     heal: raw.heal,
+    mana: raw.mana,
     quantity: raw.quantity,
     teleportTo: raw.teleportTo,
     desc: raw.desc,
@@ -214,7 +216,7 @@ export function starterItems(classId) {
     equipment: { weapon, armor, helmet, boots, ring, necklace },
     inventory: [
       makeItem('Health Potion', 'consumable', 'common', {}, { art: 'potion', icon: 'P', heal: 60, quantity: 3, price: 20, desc: 'Restores 60 HP instantly.' }),
-      makeItem('Mana Potion', 'consumable', 'common', {}, { art: 'potion', icon: 'M', spriteColor: '#5dade2', heal: 40, quantity: 2, price: 25, desc: 'Restores 40 MP instantly.' })
+      makeItem('Mana Potion', 'consumable', 'common', {}, { art: 'potion', icon: 'M', spriteColor: '#5dade2', mana: 40, quantity: 2, price: 25, desc: 'Restores 40 MP instantly.' })
     ]
   };
 }
@@ -300,7 +302,7 @@ export function makeShopStock(classId = 'swordsman') {
     roleItem('rogue'),
     roleItem('summoner'),
     makeItem('Grand Health Potion', 'consumable', 'rare', {}, { art: 'potion', icon: 'P', heal: 120, quantity: 3, price: 50, desc: 'Potent elixir restoring 120 HP.' }),
-    makeItem('Grand Mana Potion', 'consumable', 'rare', {}, { art: 'potion', icon: 'M', spriteColor: '#5dade2', heal: 80, quantity: 3, price: 60, desc: 'Restores 80 MP.' }),
+    makeItem('Grand Mana Potion', 'consumable', 'rare', {}, { art: 'potion', icon: 'M', spriteColor: '#5dade2', mana: 80, quantity: 3, price: 60, desc: 'Restores 80 MP.' }),
     teleportScroll('village')
   ];
 }

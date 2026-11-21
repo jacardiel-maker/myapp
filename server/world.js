@@ -61,10 +61,15 @@ const angleDiff = (a, b) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)
 const pick = arr => arr[Math.floor(Math.random() * arr.length)];
 function rand(a, b) { return a + Math.random() * (b - a); }
 function randInt(a, b) { return Math.floor(rand(a, b + 1)); }
+const lerp = (a, b, t) => a + (b - a) * t;
 const round = (v, d = 2) => { const f = 10 ** d; return Math.round(v * f) / f; };
 // Projectiles collide with the same solid tiles as the client. This used to
 // reference an undefined name, which threw every tick and stopped state sync.
 const PROJECTILE_BLOCKED_TILES = new Set(BLOCKED_TILES);
+const EMOTES = ['Hi!', 'GG!', '^^', 'LOL', 'Thanks!', 'Boss soon?', '<3', 'Zzz'];
+const EFFECT_COLORS = {
+  flame: '#ff8c42', frost: '#9ce7ff', void: '#c98bff', thunder: '#ffe45e'
+};
 
 function normalizeSkillRanks(ranks) {
   return Array.from({ length: 4 }, (_, i) => clamp(Number(ranks && ranks[i]) || 1, 1, 5));
@@ -73,6 +78,7 @@ function normalizeSkillRanks(ranks) {
 function sameConsumableStack(a, b) {
   return !!a && !!b && a.slot === 'consumable' && b.slot === 'consumable' &&
     a.name === b.name && a.rarity === b.rarity && a.heal === b.heal &&
+    (a.mana || 0) === (b.mana || 0) &&
     (a.teleportTo || null) === (b.teleportTo || null);
 }
 
@@ -364,6 +370,7 @@ export class World {
     const character = client.character;
     if (!character) return;
     const classId = CLASS_DATA[character.classId] ? character.classId : 'swordsman';
+    character.classId = classId;
     character.inventory = compactInventory((Array.isArray(character.inventory) ? character.inventory : [])
       .map(item => normalizeItem(item, classId)).filter(Boolean));
     character.equipment = character.equipment || {};
@@ -522,7 +529,6 @@ export class World {
     if (Number.isFinite(client.y)) character.y = round(client.y, 2);
     const room = this.rooms.get(client.roomId);
     if (room) character.zoneId = room.public ? room.zoneId : 'forest';
-    character.playTime = (Number(character.playTime) || 0) + 0.05; // roughly 20 ticks/second
     // This is the authoritative room player id, used by the client to tell
     // its own snapshot from other players' snapshots.
     character.playerId = client.id;
@@ -596,6 +602,10 @@ export class World {
       skillAnimName: client.skillAnimName,
       hasteTime: round(client.hasteTime || 0, 2),
       familiarTime: round(client.familiarTime || 0, 2),
+      shieldTime: round(client.shieldTime || 0, 2),
+      invuln: round(client.invuln || 0, 2),
+      dashTime: round(client.dashTime || 0, 2),
+      dashDir: round(client.dashDir || 0, 3),
       spec: character.spec || null,
       enchantGlow: glow > 0
     };
@@ -782,6 +792,7 @@ export class World {
     const room = this.rooms.get(client.roomId);
     if (!room) return;
 
+    if (client.character) client.character.playTime = (Number(client.character.playTime) || 0) + dt;
     client.attackCd = Math.max(0, client.attackCd - dt);
     for (let i = 0; i < 4; i++) client.skillCd[i] = Math.max(0, client.skillCd[i] - dt);
     client.skillAnim = Math.max(0, client.skillAnim - dt);
@@ -881,17 +892,10 @@ export class World {
   // ---------- Enemies ----------
 
   spawnEnemy(room, type, x, y, multiplier = 1) {
-    const base = type === 'slime'
-      ? { hp: 46, damage: 8, speed: 44, range: 20, xp: 12, gold: 6, radius: 13, aggro: 240 }
-      : type === 'goblin'
-        ? { hp: 78, damage: 13, speed: 58, range: 24, xp: 22, gold: 11, radius: 13, aggro: 290 }
-        : type === 'brute'
-          ? { hp: 180, damage: 24, speed: 34, range: 30, xp: 34, gold: 18, radius: 16, aggro: 320 }
-          : type === 'scout'
-            ? { hp: 62, damage: 10, speed: 56, range: 190, xp: 26, gold: 14, radius: 12, aggro: 340 }
-            : { hp: 920, damage: 26, speed: 50, range: 34, xp: 400, gold: 320, radius: 20, aggro: 760 };
-
-    const isBoss = type === 'boss';
+    // ENEMY_BASE_STATS includes the elemental variants spawned in frost_cave,
+    // volcano and swamp. The old type chain treated every unknown mob as a boss.
+    const base = ENEMY_BASE_STATS[type] || ENEMY_BASE_STATS.slime;
+    const isBoss = type === 'boss' || type === 'mini_boss';
     const scale = multiplier * (isBoss ? 1 : 1);
     const enemy = {
       id: this.nextEnemyId++,
@@ -1133,6 +1137,14 @@ export class World {
     enemy.alive = false;
     enemy.deathTimer = 0.5;
 
+    if (source && source.character) {
+      const base = ENEMY_BASE_STATS[enemy.type] || {};
+      const standard = ['slime', 'goblin', 'brute', 'scout'].includes(enemy.type);
+      updateAchievementProgress(source.character, 'kills', 1, this, source);
+      updateDailyProgress(source.character, standard ? `kill_${enemy.type}` : 'kill_elemental', 1, this, source);
+      updateAchievementProgress(source.character, 'gold', source.character.gold || 0, this, source);
+    }
+
     if (source && source.character && source.character.quest.active) {
       const quest = source.character.quest;
       let progressed = false;
@@ -1172,13 +1184,15 @@ export class World {
     const essenceChance = quest && quest.active && quest.stage === 3 && room.zoneId === 'desert' ? 0.65 : 0.08;
     if (Math.random() < essenceChance) this.spawnPickup(room, 'material', enemy.x, enemy.y, 1, null, 'essence');
     if (enemy.type !== 'boss' && Math.random() < 0.12) {
-      const item = randomMobDropItem(source && source.character ? source.character.classId : 'swordsman');
-      this.spawnPickup(room, 'item', enemy.x + rand(-6, 6), enemy.y, 1, item);
-      this.eventRoom(room, 'fx', {
-        visual: 'itemDrop', x: enemy.x, y: enemy.y,
-        name: item.name, rarity: item.rarity,
-        color: RARITY[item.rarity] ? RARITY[item.rarity].color : '#c9a6ff'
-      });
+      const item = generateMonsterDrop(enemy.type, room.zoneId, ZONE_MUL[room.zoneId] || 1);
+      if (item) {
+        this.spawnPickup(room, 'item', enemy.x + rand(-6, 6), enemy.y, 1, item);
+        this.eventRoom(room, 'fx', {
+          visual: 'itemDrop', x: enemy.x, y: enemy.y,
+          name: item.name, rarity: item.rarity,
+          color: RARITY[item.rarity] ? RARITY[item.rarity].color : '#c9a6ff'
+        });
+      }
     }
 
     if (enemy.type === 'boss') this.defeatBoss(room, enemy, source);
@@ -1201,8 +1215,11 @@ export class World {
       const classWeapon = {
         swordsman: { name: 'Sovereign Blade', art: 'sword' },
         archer: { name: 'Sovereign Bow', art: 'bow' },
-        mage: { name: 'Sovereign Staff', art: 'staff' }
-      }[client.character.classId];
+        mage: { name: 'Sovereign Staff', art: 'staff' },
+        cleric: { name: 'Sovereign Mace', art: 'mace' },
+        rogue: { name: 'Sovereign Dagger', art: 'dagger' },
+        summoner: { name: 'Sovereign Tome', art: 'tome' }
+      }[client.character.classId] || { name: 'Sovereign Blade', art: 'sword' };
       const loot = makeItem(
         isWeapon ? classWeapon.name : 'Boss-Slayer Charm',
         isWeapon ? 'weapon' : 'armor',
@@ -1218,6 +1235,9 @@ export class World {
         this.event(client, 'system', { text: 'Guild weekly raid goal complete! +150 gold.', color: '#c9a6ff' });
       }
       client.character.bossDefeated = true;
+      client.character.bossKills = (Number(client.character.bossKills) || 0) + 1;
+      updateAchievementProgress(client.character, 'boss_kills', 1, this, client);
+      updateDailyProgress(client.character, 'dungeon_clear', 1, this, client);
       this.gainXp(client, 400, false);
       chestRewards[String(client.id)] = loot;
       this.sendCharacter(client);
@@ -1444,10 +1464,12 @@ export class World {
 
     if (pickup.kind === 'gold') {
       character.gold += pickup.amount;
+      updateAchievementProgress(character, 'gold', character.gold, this, client);
     } else if (pickup.kind === 'xp') {
       this.gainXp(client, pickup.amount);
     } else if (pickup.kind === 'herb') {
       materials.herb += pickup.amount;
+      updateDailyProgress(character, 'gather', pickup.amount, this, client);
       const quest = character.quest;
       if (quest.active && room && room.zoneId === 'forest' && quest.stage === 1 && quest.herbs < 5) {
         quest.herbs = Math.min(5, quest.herbs + pickup.amount);
@@ -1457,6 +1479,7 @@ export class World {
     } else if (pickup.kind === 'material') {
       const key = ['herb', 'ore', 'essence'].includes(pickup.material) ? pickup.material : 'ore';
       materials[key] += pickup.amount;
+      updateDailyProgress(character, 'gather', pickup.amount, this, client);
       if (key === 'ore' && room && room.zoneId === 'cave' && character.quest.active && character.quest.stage === 2) {
         character.quest.ore = Math.min(4, character.quest.ore + pickup.amount);
         this.checkQuestComplete(client);
@@ -1501,8 +1524,11 @@ export class World {
       this.event(client, 'level', { level: character.level });
       this.event(client, 'system', { text: `Level up! You are now level ${character.level}.`, color: '#ffd75e' });
       this.sfx(client, 'level');
+      updateAchievementProgress(character, 'level', character.level, this, client);
     }
 
+    addPetXp(character, gained, this, client);
+    updateAchievementProgress(character, 'gold', character.gold || 0, this, client);
     this.sendCharacter(client);
     if (announce) this.event(client, 'system', { text: `+${gained} XP`, color: '#8ee6ff' });
   }
@@ -1933,7 +1959,7 @@ export class World {
         this.eventRoom(room, 'floater', { x: client.x, y: client.y - 42, text: `+${healAmt}`, color: '#8ee6a8' });
         // Heal party members in room
         for (const other of room.players) {
-          if (other !== client && client.character.party && other.character.party) {
+          if (other !== client && client.party && client.party.has(other) && other.alive) {
             const partyHeal = Math.round((def.healParty || 45) * power);
             other.hp = clamp(other.hp + partyHeal, 1, this.statsFor(other).maxHp);
             this.eventRoom(room, 'floater', { x: other.x, y: other.y - 42, text: `+${partyHeal}`, color: '#8ee6a8' });
@@ -1967,11 +1993,22 @@ export class World {
         }
         tx = clamp(tx, 40, room.w * TILE - 40);
         ty = clamp(ty, 40, room.h * TILE - 40);
-        client.x = tx;
-        client.y = ty;
-        fx.tx = tx;
-        fx.ty = ty;
-        this.areaDamage(room, tx, ty, 60, baseDamage * 2.7, client, 'slash');
+        // Stop at the first solid tile instead of landing inside a wall/tree.
+        let nx = client.x;
+        let ny = client.y;
+        const steps = Math.max(1, Math.ceil(dist(client, { x: tx, y: ty }) / 10));
+        for (let i = 1; i <= steps; i++) {
+          const px = lerp(client.x, tx, i / steps);
+          const py = lerp(client.y, ty, i / steps);
+          if (this.isBlocked(room, px, py, 12)) break;
+          nx = px;
+          ny = py;
+        }
+        client.x = nx;
+        client.y = ny;
+        fx.tx = nx;
+        fx.ty = ny;
+        this.areaDamage(room, nx, ny, 60, baseDamage * 2.7, client, 'slash');
         this.sfxRoom(room, 'swing');
       } else if (index === 1) { // Smoke Bomb
         client.invuln = 2.5;
@@ -2035,9 +2072,11 @@ export class World {
         let nx = client.x;
         let ny = client.y;
         for (let s = 0; s <= 1; s += 0.05) {
-          const px = client.x + (client.x + cos * 170 - client.x) * s;
-          const py = client.y + (client.y + sin * 170 - client.y) * s;
-          if (!this.isBlocked(room, px, py, 12)) { nx = px; ny = py; }
+          const px = lerp(client.x, client.x + cos * 170, s);
+          const py = lerp(client.y, client.y + sin * 170, s);
+          if (this.isBlocked(room, px, py, 12)) break;
+          nx = px;
+          ny = py;
         }
         fx.tx = nx;
         fx.ty = ny;
@@ -2049,7 +2088,7 @@ export class World {
         const point = this.skillTargetPoint(client, room, message, lockedTarget, 260, 260);
         fx.tx = point.x;
         fx.ty = point.y;
-        this.scheduleMeteor(room, point.x, point.y, baseDamage * 2.2, client.id);
+        this.scheduleMeteor(room, point.x, point.y, baseDamage * 2.6, client.id);
       } else {
         const point = this.skillTargetPoint(client, room, message, lockedTarget, 220, 220);
         fx.tx = point.x;
@@ -2183,6 +2222,15 @@ export class World {
     }
     room.players.add(client);
 
+    if (room.public) {
+      const visited = new Set(Array.isArray(client.character.zonesVisited) ? client.character.zonesVisited : []);
+      if (!visited.has(room.zoneId)) {
+        visited.add(room.zoneId);
+        client.character.zonesVisited = [...visited];
+        updateAchievementProgress(client.character, 'zones_visited', 1, this, client);
+      }
+    }
+
     this.sendInit(client, room);
     this.sendCharacter(client);
     const roomName = !room.public ? 'the dungeon' : room.zoneId === 'village' ? 'Hearthvale Village' : room.zoneId;
@@ -2311,7 +2359,12 @@ export class World {
     let index = -1;
     if (uid !== null && uid !== undefined) index = inventory.findIndex(item => item && item.uid === uid);
     else {
-      index = inventory.findIndex(item => item && item.slot === 'consumable' && item.heal > 0);
+      // Prefer a potion that can actually help right now; otherwise fall back to
+      // any healing/mana potion so the player gets a useful error message.
+      index = inventory.findIndex(item => item && item.slot === 'consumable' &&
+        ((item.heal > 0 && client.hp < client.maxHp) || (item.mana > 0 && client.mp < client.maxMp)));
+      if (index < 0) index = inventory.findIndex(item => item && item.slot === 'consumable' &&
+        ((item.heal > 0) || (item.mana > 0)));
       if (index < 0) index = inventory.findIndex(item => item && item.slot === 'consumable' && item.teleportTo === 'village');
     }
 
@@ -2332,14 +2385,23 @@ export class World {
       this.system(client, 'The teleport scroll carried you to Hearthvale Village.', '#c9a6ff');
       return;
     }
-    if (!(item.heal > 0)) { this.error(client, 'That item cannot be used this way.'); return; }
-    if (client.hp >= client.maxHp) { this.error(client, 'HP is already full.'); return; }
 
-    const healed = Math.min(client.maxHp - client.hp, item.heal);
+    const canHeal = item.heal > 0 && client.hp < client.maxHp;
+    const canRestoreMana = item.mana > 0 && client.mp < client.maxMp;
+    if (!canHeal && !canRestoreMana) {
+      this.error(client, item.heal > 0 ? 'HP is already full.' : 'MP is already full.');
+      return;
+    }
+
+    const healed = canHeal ? Math.min(client.maxHp - client.hp, item.heal) : 0;
+    const restored = canRestoreMana ? Math.min(client.maxMp - client.mp, item.mana) : 0;
     client.hp += healed;
+    client.mp += restored;
     if ((item.quantity || 1) > 1) item.quantity--;
     else inventory.splice(index, 1);
-    this.event(client, 'system', { text: `Restored ${Math.round(healed)} HP.`, color: '#7bff9b' });
+    const label = healed && restored ? `Restored ${Math.round(healed)} HP and ${Math.round(restored)} MP.`
+      : restored ? `Restored ${Math.round(restored)} MP.` : `Restored ${Math.round(healed)} HP.`;
+    this.event(client, 'system', { text: label, color: restored ? '#7bc8ff' : '#7bff9b' });
     this.event(client, 'sfx', { name: 'pickup' });
     this.sendCharacter(client);
   }
@@ -2443,7 +2505,7 @@ export class World {
   handleSpec(client, message) {
     const spec = String(message.spec || '');
     const character = client.character;
-    const allowed = SPECS[character.classId] || [];
+    const allowed = SPECIALIZATIONS[character.classId] || [];
     if (!allowed.includes(spec)) { this.error(client, 'Invalid specialisation for your class.'); return; }
     if ((character.level || 1) < 10) { this.error(client, 'Specialisations unlock at level 10.'); return; }
     if (character.spec) { this.error(client, 'Your specialisation is already chosen.'); return; }
@@ -2612,6 +2674,7 @@ export class World {
     materials.essence -= essenceCost;
     client.character.gold -= goldCost;
     item.enchant = (item.enchant || 0) + 1;
+    updateAchievementProgress(client.character, 'enchants', 1, this, client);
     const effects = ['flame', 'frost', 'void', 'thunder'];
     item.effect = effects[(item.enchant - 1) % effects.length];
     item.color = EFFECT_COLORS[item.effect];
@@ -2670,13 +2733,9 @@ export class World {
     let item = null;
     const reference = message.item;
 
-    if (reference && typeof reference === 'object') {
-      const index = inventory.findIndex(i => i && i.uid === reference.uid);
-      if (index >= 0) item = inventory.splice(index, 1)[0];
-      else if (reference.uid) { this.error(client, 'Item not found in your bag.'); return; }
-      else item = normalizeItem(reference); // allow a plain item description too
-    } else {
-      const index = inventory.findIndex(i => i && i.uid === reference);
+    const referenceUid = reference && typeof reference === 'object' ? reference.uid : reference;
+    if (referenceUid !== undefined && referenceUid !== null) {
+      const index = inventory.findIndex(i => i && i.uid === referenceUid);
       if (index < 0) { this.error(client, 'Item not found in your bag.'); return; }
       item = inventory.splice(index, 1)[0];
     }
@@ -2703,18 +2762,20 @@ export class World {
     const id = Math.floor(Number(message.id));
     try {
       const result = this.db.auctionBuy({ accountId: client.accountId, id });
-      const fresh = this.db.getCharacter(client.accountId);
-      if (fresh) { client.character = fresh; this.hydrate(client); }
+      // Apply the purchase to the live character. Replacing it with the freshly
+      // read DB copy would discard anything that happened since the last save.
+      client.character.gold = Math.max(0, (client.character.gold || 0) - result.price);
+      if (!this.addItem(client, result.item)) client.character.gold += 15;
       this.event(client, 'system', { text: `Bought ${result.item.name} for ${result.price} gold.`, color: RARITY[result.item.rarity]?.color || '#dedede' });
       this.sfx(client, 'pickup');
       this.emitAuctionList(client);
       this.sendCharacter(client);
 
-      // Update the seller's browser too if they are online.
+      // Update the seller's browser too if they are online, without replacing
+      // their live character from a possibly stale DB snapshot.
       const seller = [...this.clients].find(c => c.accountId === result.sellerId);
       if (seller) {
-        const sellerCharacter = this.db.getCharacter(result.sellerId);
-        if (sellerCharacter) { seller.character = sellerCharacter; this.hydrate(seller); }
+        seller.character.gold = (seller.character.gold || 0) + result.price;
         this.event(seller, 'system', { text: `Your auction sold for ${result.price} gold.`, color: '#ffd75e' });
         this.sendCharacter(seller);
       }
@@ -2871,7 +2932,7 @@ export class World {
         attacker.character.gold += 50;
         updateAchievementProgress(attacker.character, 'pvp_wins', 1, this, attacker);
         updateDailyProgress(attacker.character, 'arena_win', 1, this, attacker);
-        this.systemRoom(room, `🏆 ${attacker.character.name} fells ${target.character.name} in the Arena! (+25 Rating)`, '#ffd75e');
+        this.eventRoom(room, 'system', { text: `🏆 ${attacker.character.name} fells ${target.character.name} in the Arena! (+25 Rating)`, color: '#ffd75e' });
         this.sendCharacter(attacker);
       }
 
@@ -2895,6 +2956,7 @@ export class World {
   handleClaimAchievement(client, message) {
     const res = claimAchievementReward(client.character, message.id);
     if (res.error) { this.error(client, res.error); return; }
+    if (res.reward.xp) this.gainXp(client, res.reward.xp, false);
     this.system(client, `Claimed achievement reward: +${res.reward.gold || 0} Gold, +${res.reward.xp || 0} XP!`, '#50fa7b');
     this.sendCharacter(client);
     this.send(client, { type: 'achievements', achievements: client.character.achievements });
@@ -2903,6 +2965,7 @@ export class World {
   handleClaimDaily(client, message) {
     const res = claimDailyReward(client.character, message.id);
     if (res.error) { this.error(client, res.error); return; }
+    if (res.reward.xp) this.gainXp(client, res.reward.xp, false);
     this.system(client, `Claimed daily bounty: +${res.reward.gold || 0} Gold, +${res.reward.xp || 0} XP!`, '#50fa7b');
     this.sendCharacter(client);
     this.send(client, { type: 'daily_quests', dailyQuests: client.character.dailyQuests });
@@ -2932,7 +2995,7 @@ export class World {
     }
     try {
       this.db.updatePassword(client.accountId, newPassword);
-      this.send(client, { type: 'passwordSet', success: true, newPassword });
+      this.send(client, { type: 'passwordSet', success: true });
       this.system(client, 'Account password updated! You can now use it on other devices.', '#8ee6ff');
     } catch (err) {
       this.error(client, err.message);
