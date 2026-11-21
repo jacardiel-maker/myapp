@@ -39,6 +39,63 @@
   };
   const VALID_EQUIP_SLOTS = ['weapon', 'armor', 'helmet', 'boots', 'ring', 'necklace'];
   const ALL_ITEM_SLOTS = [...VALID_EQUIP_SLOTS, 'consumable', 'material', 'pet_collar', 'pet_charm'];
+
+  // Offline mirrors of the server's achievement/daily reward tables. The server
+  // stays authoritative online; these let offline play claim the same rewards.
+  const ACH_REWARDS = {
+    first_blood: { gold: 50, xp: 25, title: 'Novice' },
+    monster_culler: { gold: 150, xp: 80 },
+    monster_bane: { gold: 500, xp: 300, title: 'Hunter' },
+    boss_slayer: { gold: 600, xp: 450, title: 'Dragonslayer' },
+    reach_lvl_5: { gold: 100, xp: 50 },
+    reach_lvl_10: { gold: 300, xp: 200, title: 'Veteran' },
+    reach_lvl_20: { gold: 1200, xp: 1000, title: 'Mythic Champion' },
+    wealthy_1: { gold: 50, xp: 20 },
+    wealthy_2: { gold: 250, xp: 100, title: 'Merchant' },
+    wealthy_3: { gold: 1000, xp: 500, title: 'Tycoon' },
+    craft_enchant: { gold: 150, xp: 100, title: 'Artisan' },
+    zone_explorer: { gold: 300, xp: 200, title: 'Explorer' },
+    pvp_first_win: { gold: 200, xp: 150, title: 'Gladiator' },
+    pvp_champion: { gold: 1000, xp: 800, title: 'Warlord' },
+    beastmaster: { gold: 250, xp: 150, title: 'Beastmaster' }
+  };
+  const BOUNTY_POOL_CLIENT = [
+    { id: 'bounty_slimes', title: 'Slime Purge', desc: 'Eliminate 8 Slimes in the Forest or Caves.', target: 8, key: 'kill_slime', reward: { gold: 120, xp: 90 } },
+    { id: 'bounty_goblins', title: 'Goblin Patrol', desc: 'Hunt down 6 Goblins.', target: 6, key: 'kill_goblin', reward: { gold: 150, xp: 120 } },
+    { id: 'bounty_brutes', title: 'Felling Giants', desc: 'Defeat 3 heavy Brutes.', target: 3, key: 'kill_brute', reward: { gold: 200, xp: 180 } },
+    { id: 'bounty_scouts', title: 'Desert Watch', desc: 'Snipe 5 Scouts in the Desert dunes.', target: 5, key: 'kill_scout', reward: { gold: 180, xp: 140 } },
+    { id: 'bounty_elemental', title: 'Elemental Threat', desc: 'Slay 5 Frost, Fire, or Venom elemental mobs.', target: 5, key: 'kill_elemental', reward: { gold: 250, xp: 220 } },
+    { id: 'bounty_dungeon', title: 'Lair Cleansing', desc: 'Complete 1 Dungeon run and fell the Boss.', target: 1, key: 'dungeon_clear', reward: { gold: 400, xp: 350 } },
+    { id: 'bounty_arena', title: 'Arena Contender', desc: 'Participate and win 1 duel in the PvP Arena.', target: 1, key: 'arena_win', reward: { gold: 300, xp: 250 } },
+    { id: 'bounty_harvest', title: 'Supply Run', desc: 'Gather 4 crafting resources (herbs, ore, or essence).', target: 4, key: 'gather', reward: { gold: 140, xp: 100 } }
+  ];
+
+  function clientDayString() {
+    const d = new Date();
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+  }
+
+  function clientDailyQuests(dateStr = clientDayString()) {
+    let seed = 0;
+    for (let i = 0; i < dateStr.length; i++) {
+      seed = ((seed << 5) - seed) + dateStr.charCodeAt(i);
+      seed |= 0;
+    }
+    const pool = [...BOUNTY_POOL_CLIENT];
+    const quests = [];
+    for (let i = 0; i < 3; i++) {
+      const idx = (Math.abs(seed) + i * 17) % pool.length;
+      const q = pool.splice(idx, 1)[0];
+      quests.push({ ...q, date: dateStr, progress: 0, completed: false, claimed: false });
+    }
+    return { date: dateStr, quests };
+  }
+
+  function normalizeClientDaily(saved = {}) {
+    const today = clientDayString();
+    if (!saved || saved.date !== today || !Array.isArray(saved.quests)) return clientDailyQuests(today);
+    return { date: today, quests: saved.quests };
+  }
   // Trees, water, cacti, cave walls and village buildings are real obstacles.
   const BLOCKED_TILES = new Set([
     TILE_ID.WATER, TILE_ID.TREE, TILE_ID.ROCK, TILE_ID.CACTUS,
@@ -3166,6 +3223,7 @@
       this.mp = this.maxMp;
       game.addFloater(this.x, this.y - 96, 'LEVEL UP!', '#ffd75e', 18);
       game.log(`Level up! You are now level ${this.level}. (Skill point earned)`, '#ffd75e');
+      game.trackOfflineProgress('level', this.level);
       game.audio.sfx('level');
       game.shake = Math.max(game.shake, 5);
       game.save();
@@ -4263,6 +4321,20 @@
   // EXPANSION 1: network client + lightweight synced actors
   // ============================================================
 
+  // A snapshot gives us a new target position. Copying x/y directly would make
+  // interpolate() a no-op and every remote actor would snap at 20 Hz, so keep
+  // the current visual position and only update tx/ty.
+  function applySnapshot(actor, data) {
+    const currentX = Number.isFinite(actor.x) ? actor.x : Number(data.x) || 0;
+    const currentY = Number.isFinite(actor.y) ? actor.y : Number(data.y) || 0;
+    actor.tx = Number.isFinite(data.x) ? data.x : actor.tx;
+    actor.ty = Number.isFinite(data.y) ? data.y : actor.ty;
+    Object.assign(actor, data);
+    actor.x = currentX;
+    actor.y = currentY;
+    return actor;
+  }
+
   class RemotePlayer {
     constructor(data) {
       this.id = data.id;
@@ -4272,17 +4344,18 @@
       this.skillAnimDuration = 0.55;
       this.skillAnimColor = '#fff';
       this.skillAnimName = '';
+      this.x = data.x;
+      this.y = data.y;
       this.tx = data.x;
       this.ty = data.y;
       this.update(data);
-      this.x = data.x;
-      this.y = data.y;
     }
     update(data) {
-      this.tx = Number.isFinite(data.x) ? data.x : this.tx;
-      this.ty = Number.isFinite(data.y) ? data.y : this.ty;
-      this.moving = Math.hypot(this.tx - (this.x || this.tx), this.ty - (this.y || this.ty)) > 1;
-      Object.assign(this, data);
+      this.moving = Math.hypot(
+        (Number.isFinite(data.x) ? data.x : this.tx) - this.x,
+        (Number.isFinite(data.y) ? data.y : this.ty) - this.y
+      ) > 1;
+      applySnapshot(this, data);
       this.radius = 12;
       this.alive = true;
       this.attackAnim = data.attackAnim || 0;
@@ -4320,16 +4393,14 @@
   class RemoteEnemy {
     constructor(data) {
       this.radius = data.radius || 13;
+      this.x = data.x;
+      this.y = data.y;
       this.tx = data.x;
       this.ty = data.y;
       this.update(data);
-      this.x = data.x;
-      this.y = data.y;
     }
     update(data) {
-      this.tx = Number.isFinite(data.x) ? data.x : this.tx;
-      this.ty = Number.isFinite(data.y) ? data.y : this.ty;
-      Object.assign(this, data);
+      applySnapshot(this, data);
       this.alive = data.alive !== false;
       this.radius = data.radius || this.radius || 13;
     }
@@ -4369,9 +4440,7 @@
       this.y = data.y;
     }
     update(data) {
-      this.tx = Number.isFinite(data.x) ? data.x : this.tx;
-      this.ty = Number.isFinite(data.y) ? data.y : this.ty;
-      Object.assign(this, data);
+      applySnapshot(this, data);
     }
     interpolate(dt) {
       const k = 1 - Math.exp(-dt * 24);
@@ -4391,9 +4460,7 @@
       this.y = data.y;
     }
     update(data) {
-      this.tx = Number.isFinite(data.x) ? data.x : this.tx;
-      this.ty = Number.isFinite(data.y) ? data.y : this.ty;
-      Object.assign(this, data);
+      applySnapshot(this, data);
     }
     interpolate(dt) {
       const k = 1 - Math.exp(-dt * 18);
@@ -4567,6 +4634,7 @@
 
       this.achievements = { progress: {}, unlocked: [], claimed: [] };
       this.dailyQuests = { date: '', quests: [] };
+      this.normalizeOfflineProgress();
       this.chatMessages = [];
       this.chatOpen = false;
       this.chatMinimized = false;
@@ -5609,8 +5677,11 @@
 
       if (Number.isFinite(p.tx) && Number.isFinite(p.ty)) {
         const error = Math.hypot(p.tx - p.x, p.ty - p.y);
-        if (!canMove || error > 32) {
-          const correctionRate = error > 32 ? 18 : 28;
+        // Correct continuously instead of waiting for a 32px mismatch and then
+        // snapping. Small drift is eased out; large drift (teleport/knockback)
+        // is corrected faster.
+        if (error > 0.5) {
+          const correctionRate = !canMove ? 18 : error > 64 ? 20 : 6;
           const k = 1 - Math.exp(-dt * correctionRate);
           p.x = lerp(p.x, p.tx, k);
           p.y = lerp(p.y, p.ty, k);
@@ -6287,6 +6358,97 @@
       } catch { return null; }
     }
 
+    normalizeOfflineProgress() {
+      const ach = this.achievements && typeof this.achievements === 'object' ? this.achievements : {};
+      this.achievements = {
+        progress: ach.progress && typeof ach.progress === 'object' ? ach.progress : {},
+        unlocked: Array.isArray(ach.unlocked) ? ach.unlocked : [],
+        claimed: Array.isArray(ach.claimed) ? ach.claimed : []
+      };
+      this.dailyQuests = normalizeClientDaily(this.dailyQuests);
+    }
+
+    // Offline version of the server's progress hooks. Online play ignores this
+    // and trusts the achievement/daily packets sent by the authoritative world.
+    trackOfflineProgress(key, amount = 1) {
+      if (this.network.online || !this.player) return;
+      this.normalizeOfflineProgress();
+      const p = this.player;
+      const ach = this.achievements;
+      const progress = ach.progress;
+      progress[key] = (Number(progress[key]) || 0) + amount;
+
+      const unlock = id => {
+        if (ach.unlocked.includes(id)) return;
+        ach.unlocked.push(id);
+        this.log(`Achievement unlocked! Check the Achievements menu.`, '#ffd75e');
+        this.audio.sfx('level');
+        this.save();
+      };
+      const kills = Number(progress.kills) || 0;
+      if (kills >= 1) unlock('first_blood');
+      if (kills >= 25) unlock('monster_culler');
+      if (kills >= 100) unlock('monster_bane');
+      if ((Number(progress.boss_kills) || 0) >= 1) unlock('boss_slayer');
+      if (p.level >= 5) unlock('reach_lvl_5');
+      if (p.level >= 10) unlock('reach_lvl_10');
+      if (p.level >= 20) unlock('reach_lvl_20');
+      if (p.gold >= 200) unlock('wealthy_1');
+      if (p.gold >= 1000) unlock('wealthy_2');
+      if (p.gold >= 5000) unlock('wealthy_3');
+      if (key === 'enchants' && (Number(progress.enchants) || 0) >= 1) unlock('craft_enchant');
+      if (key === 'zones_visited' && (Number(progress.zones_visited) || 0) >= 5) unlock('zone_explorer');
+      if (key === 'pvp_wins' && (Number(progress.pvp_wins) || 0) >= 1) unlock('pvp_first_win');
+      if (key === 'pvp_wins' && (Number(progress.pvp_wins) || 0) >= 10) unlock('pvp_champion');
+      if (key === 'pet_level' && (Number(progress.pet_level) || 0) >= 2) unlock('beastmaster');
+
+      let dailyChanged = false;
+      for (const q of this.dailyQuests.quests) {
+        if (q.completed || q.progress >= q.target) continue;
+        const match = q.key === key || (q.key === 'kill_elemental' && String(key).startsWith('kill_elemental'));
+        if (!match) continue;
+        q.progress = Math.min(q.target, (Number(q.progress) || 0) + amount);
+        if (q.progress >= q.target) {
+          q.completed = true;
+          this.log(`Daily bounty complete: ${q.title}! Claim it in the Daily menu.`, '#7bed9f');
+          this.save();
+        }
+        dailyChanged = true;
+      }
+      if (dailyChanged) this.save();
+    }
+
+    claimAchievementOffline(id) {
+      this.normalizeOfflineProgress();
+      const ach = this.achievements;
+      if (!ach.unlocked.includes(id)) { this.log('Achievement not unlocked yet.', '#ff9b9b'); return; }
+      if (ach.claimed.includes(id)) { this.log('Reward already claimed.', '#ff9b9b'); return; }
+      const reward = ACH_REWARDS[id];
+      if (!reward) { this.log('Unknown achievement reward.', '#ff9b9b'); return; }
+      ach.claimed.push(id);
+      this.player.gold += reward.gold || 0;
+      if (reward.title) this.player.title = reward.title;
+      if (reward.xp) this.player.gainXp(reward.xp, this);
+      this.log(`Claimed achievement reward: +${reward.gold}g / +${reward.xp || 0}xp`, '#7bed9f');
+      this.trackOfflineProgress('gold', 0);
+      this.save();
+    }
+
+    claimDailyOffline(id) {
+      this.normalizeOfflineProgress();
+      const q = this.dailyQuests.quests.find(entry => entry.id === id);
+      if (!q) { this.log('Daily bounty not found.', '#ff9b9b'); return; }
+      if (!q.completed) { this.log('Finish the bounty first.', '#ff9b9b'); return; }
+      if (q.claimed) { this.log('Reward already claimed.', '#ff9b9b'); return; }
+      q.claimed = true;
+      const reward = q.reward || {};
+      this.player.gold += reward.gold || 0;
+      if (reward.xp) this.player.gainXp(reward.xp, this);
+      this.log(`Claimed daily reward: +${reward.gold || 0}g / +${reward.xp || 0}xp`, '#7bed9f');
+      this.trackOfflineProgress('gold', 0);
+      this.save();
+    }
+
     _saveSession(username, password) {
       try {
         localStorage.setItem(SESSION_KEY, JSON.stringify({ username, password }));
@@ -6763,6 +6925,11 @@
 
     travelTo(portal) {
       this.zoneId = portal.to;
+      if (!Array.isArray(this.player.zonesVisited)) this.player.zonesVisited = [];
+      if (!this.player.zonesVisited.includes(this.zoneId)) {
+        this.player.zonesVisited.push(this.zoneId);
+        if (!this.network.online) this.trackOfflineProgress('zones_visited', 1);
+      }
       this.zone = this.zones[this.zoneId];
       this.player.x = portal.arrive.x;
       this.player.y = portal.arrive.y;
@@ -6816,6 +6983,21 @@
         if (this.quest.stage === 2 && this.zoneId === 'cave' && enemy.type === 'goblin') this.quest.goblins = Math.min(8, this.quest.goblins + 1);
         if (this.quest.stage === 3 && this.zoneId === 'desert' && enemy.type === 'scout') this.quest.scouts = Math.min(8, this.quest.scouts + 1);
         this.checkQuest();
+      }
+      if (source === this.player && !this.network.online) {
+        const type = String(enemy.type || '');
+        this.trackOfflineProgress('kills', 1);
+        if (type === 'boss' || type === 'mini_boss') {
+          this.trackOfflineProgress('boss_kills', 1);
+          this.trackOfflineProgress('dungeon_clear', 1);
+        }
+        if (type.includes('slime')) this.trackOfflineProgress('kill_slime', 1);
+        if (type.includes('goblin')) this.trackOfflineProgress('kill_goblin', 1);
+        if (type.includes('brute')) this.trackOfflineProgress('kill_brute', 1);
+        if (type.includes('scout')) this.trackOfflineProgress('kill_scout', 1);
+        if (type.includes('frost') || type.includes('fire') || type.includes('magma') || type.includes('venom') || type.includes('swamp') || type.includes('bog')) {
+          this.trackOfflineProgress('kill_elemental_' + type, 1);
+        }
       }
       // Fake players keep their own rewards; orphan loot would fall out of view.
       const giveDrops = !(source instanceof OtherPlayer);
@@ -6894,6 +7076,7 @@
       if (p.kind === 'gold') {
         pl.gold += p.amount;
         this.addFloater(pl.x, pl.y - 46, `+${p.amount} gold`, '#ffd75e', 11);
+        if (!this.network.online) this.trackOfflineProgress('gold', 0);
       } else if (p.kind === 'xp') {
         pl.gainXp(p.amount, this);
       } else if (p.kind === 'herb') {
@@ -6904,6 +7087,7 @@
         } else {
           this.addFloater(pl.x, pl.y - 46, 'Herb', '#8ee46d', 10);
         }
+        if (!this.network.online) this.trackOfflineProgress('gather', 1);
       } else if (p.kind === 'ore') {
         pl.materials.ore += 1;
         if (this.quest.active && this.zoneId === 'cave' && this.quest.stage === 2 && this.quest.ore < 4) {
@@ -6913,6 +7097,7 @@
         } else {
           this.addFloater(pl.x, pl.y - 46, 'Ore', '#9ce7ff', 10);
         }
+        if (!this.network.online) this.trackOfflineProgress('gather', 1);
       } else if (p.kind === 'essence') {
         pl.materials.essence += 1;
         if (this.quest.active && this.zoneId === 'desert' && this.quest.stage === 3 && this.quest.essence < 3) {
@@ -6922,6 +7107,7 @@
         } else {
           this.addFloater(pl.x, pl.y - 46, 'Essence', '#d7b8ff', 10);
         }
+        if (!this.network.online) this.trackOfflineProgress('gather', 1);
       } else {
         if (!pl.addItem(p.item)) { p.collected = false; return; }
         this.addFloater(pl.x, pl.y - 46, `Found ${p.item.name}`, RARITY[p.item.rarity].color, 11);
@@ -7321,11 +7507,13 @@
       if (action.startsWith('claimAch:')) {
         const id = action.slice(9);
         if (this.network.online) this.network.send({ type: 'claim_achievement', id });
+        else this.claimAchievementOffline(id);
         return;
       }
       if (action.startsWith('claimDaily:')) {
         const id = action.slice(11);
         if (this.network.online) this.network.send({ type: 'claim_daily', id });
+        else this.claimDailyOffline(id);
         return;
       }
       if (action.startsWith('setLeadTab:')) {
@@ -7461,8 +7649,23 @@
         case 'interact': this.interact(); break;
         case 'emote': this.emote(); break;
         case 'party': this.inviteParty(); break;
-        case 'partyLeave': this.leaveParty(); break;
-        case 'partyDisband': this.disbandParty(); break;
+        case 'partyLeave':
+          if (this.network.online && !this.party.length) {
+            this.log('You are not in a party.', '#9aa6bd');
+            break;
+          }
+          this.leaveParty();
+          break;
+        case 'partyDisband':
+          if (this.network.online) {
+            if (!this.party.length) { this.log('You are not in a party.', '#9aa6bd'); break; }
+            if (String(this.player && this.player.partyLeaderId) !== String(this.network.playerId)) {
+              this.log('Only the party leader can disband.', '#ffcf70');
+              break;
+            }
+          }
+          this.disbandParty();
+          break;
         case 'potion':
           this.useConsumable();
           break;
@@ -8495,16 +8698,24 @@
         ctx.fillText(`SP: ${p.skillPoints} (K)`, 252, 108);
         ctx.textAlign = 'left';
       }
+      const hasParty = this.party.length > 0;
+      const isLeader = !this.network.online ||
+        String(p.partyLeaderId) === String(this.network.playerId);
+      const tabs = [
+        ['PTY', 'party', hasParty ? '#3f5f8f' : '#3a3f50'],
+        ['OUT', 'partyLeave', hasParty ? '#5b4b6c' : '#3a3f50'],
+        ['DIS', 'partyDisband', hasParty && isLeader ? '#6b3542' : '#3a3f50']
+      ];
       if (this.network.online) {
-        const tabs = [
-          ['B', 'openAuction', 'Auction'], ['M', 'openMail', 'Mail'], ['G', 'openGuild', 'Guild'],
-          ['R', 'openCraft', 'Craft'], ['T', 'openTalents', 'Talents'], ['N', 'enterDungeon', 'Raid']
-        ];
-        tabs.forEach((tab, i) => {
-          this.button(270 + i * 58, 12, 54, 24, tab[0], tab[1],
-            { color: i === 5 ? '#6b3542' : '#34405c', fontSize: 10 });
-        });
+        tabs.unshift(
+          ['B', 'openAuction', '#34405c'], ['M', 'openMail', '#34405c'], ['G', 'openGuild', '#34405c'],
+          ['R', 'openCraft', '#34405c'], ['T', 'openTalents', '#34405c'], ['N', 'enterDungeon', '#6b3542']
+        );
       }
+      tabs.forEach((tab, i) => {
+        this.button(270 + i * 55, 12, 50, 24, tab[0], tab[1],
+          { color: tab[2], fontSize: tab[0].length > 1 ? 9 : 10 });
+      });
     }
 
     drawHotbar() {
@@ -8617,19 +8828,23 @@
     drawParty() {
       if (!this.party.length) return;
       const ctx = this.ctx;
-      const y = this.quest.active || this.quest.complete ? 186 : 124;
+      // On touch screens the chat panel occupies the left column, so move the
+      // party list into the free middle column instead of drawing over chat.
+      const mobile = this.input.mobile;
+      const x = mobile ? 340 : 12;
+      const y = mobile ? 120 : (this.quest.active || this.quest.complete ? 186 : 124);
       ctx.fillStyle = 'rgba(8,12,22,0.84)';
-      ctx.fillRect(12, y, 180, 26 + this.party.length * 16);
+      ctx.fillRect(x, y, 180, 26 + this.party.length * 16);
       ctx.strokeStyle = '#ffd75e';
-      ctx.strokeRect(12.5, y + 0.5, 179, 25 + this.party.length * 16);
+      ctx.strokeRect(x + 0.5, y + 0.5, 179, 25 + this.party.length * 16);
       ctx.font = 'bold 10px monospace';
       ctx.textAlign = 'left';
       ctx.fillStyle = '#ffd75e';
-      ctx.fillText(`PARTY (${this.party.length + 1})`, 20, y + 15);
+      ctx.fillText(`PARTY (${this.party.length + 1})`, x + 8, y + 15);
       this.party.forEach((op, i) => {
         ctx.fillStyle = '#dbe6ff';
-        ctx.fillText(`${op.name} Lv${op.level}`, 20, y + 31 + i * 16);
-        drawBar(ctx, 108, y + 22 + i * 16, 74, 6, op.hp / op.maxHp, '#6ee787');
+        ctx.fillText(`${op.name} Lv${op.level}`, x + 8, y + 31 + i * 16);
+        drawBar(ctx, x + 96, y + 22 + i * 16, 74, 6, op.hp / op.maxHp, '#6ee787');
       });
     }
 
@@ -8662,7 +8877,8 @@
       const ctx = this.ctx;
       if (this.chatMinimized) {
         const x = 12;
-        const y = this.input.mobile ? 72 : VIEW_H - 38;
+        // Mobile HUD occupies y=12..112, so the minimized chat sits below it.
+        const y = this.input.mobile ? 182 : VIEW_H - 38;
         const w = 88;
         const h = 26;
         this.button(x, y, w, h, 'CHAT +', 'toggleChat', { fontSize: 10 });
@@ -10002,7 +10218,7 @@
       const x = 142;
       const y = 38;
       const w = 676;
-      const h = 464;
+      const h = 486;
       ctx.fillStyle = 'rgba(4,7,14,0.72)';
       ctx.fillRect(0, 0, VIEW_W, VIEW_H);
       panel(ctx, x, y, w, h,
@@ -10013,6 +10229,10 @@
         { label: 'SKILL PTS', action: 'openSkills' },
         { label: 'TALENTS', action: 'openTalents' },
         { label: 'CRAFT', action: 'openCraft' },
+        { label: 'ACHIEVEMENTS', action: 'openAchievements' },
+        { label: 'DAILY', action: 'openDaily' },
+        { label: 'LEADERBOARD', action: 'openLeaderboardModal' },
+        { label: 'PETS', action: 'openPets' },
         { label: 'AUCTION', action: 'openAuction', online: true },
         { label: 'MAIL', action: 'openMail', online: true },
         { label: 'GUILD', action: 'openGuild', online: true },
@@ -10028,13 +10248,13 @@
         { label: 'SAVE', action: 'save' },
         { label: 'CLOSE', action: 'closeMobileMenu', color: '#6b3542' }
       ];
-      const cols = 3;
-      const bw = 196;
-      const bh = 58;
-      const gapX = 18;
-      const gapY = 12;
-      const startX = x + 26;
-      const startY = y + 54;
+      const cols = 4;
+      const bw = 150;
+      const bh = 54;
+      const gapX = 14;
+      const gapY = 10;
+      const startX = x + 18;
+      const startY = y + 52;
       items.forEach((item, i) => {
         const bx = startX + (i % cols) * (bw + gapX);
         const by = startY + Math.floor(i / cols) * (bh + gapY);
@@ -10045,7 +10265,7 @@
         this.button(bx, by, bw, bh, item.label, item.action, {
           color: unavailable ? '#3a3f50' : (item.color || '#34405c'),
           textColor: unavailable ? '#8c97ad' : '#fff',
-          fontSize: 11
+          fontSize: 10
         });
       });
 
