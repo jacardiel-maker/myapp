@@ -6,7 +6,7 @@
     1. Serves index.html / style.css / game.js as static files.
     2. Accepts WebSocket upgrades on /ws (see server/net.js).
     3. Handles register/login and checks the token on every other message.
-    4. Starts the 20 Hz simulation and the 10 second cloud save timer.
+    4. Starts the 30 Hz simulation and the 10 second cloud save timer.
 */
 import http from 'node:http';
 import fs from 'node:fs';

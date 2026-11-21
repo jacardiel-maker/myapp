@@ -4361,7 +4361,7 @@
       this.attackAnim = data.attackAnim || 0;
     }
     interpolate(dt) {
-      const k = 1 - Math.exp(-dt * 18);
+      const k = 1 - Math.exp(-dt * 24);
       this.x = lerp(this.x, this.tx, k);
       this.y = lerp(this.y, this.ty, k);
       if (Math.hypot(this.tx - this.x, this.ty - this.y) < 0.6) this.moving = false;
@@ -4405,7 +4405,7 @@
       this.radius = data.radius || this.radius || 13;
     }
     interpolate(dt) {
-      const k = 1 - Math.exp(-dt * 16);
+      const k = 1 - Math.exp(-dt * 22);
       this.x = lerp(this.x, this.tx, k);
       this.y = lerp(this.y, this.ty, k);
     }
@@ -4443,7 +4443,7 @@
       applySnapshot(this, data);
     }
     interpolate(dt) {
-      const k = 1 - Math.exp(-dt * 24);
+      const k = 1 - Math.exp(-dt * 30);
       this.x = lerp(this.x, this.tx, k);
       this.y = lerp(this.y, this.ty, k);
     }
@@ -4463,7 +4463,7 @@
       applySnapshot(this, data);
     }
     interpolate(dt) {
-      const k = 1 - Math.exp(-dt * 18);
+      const k = 1 - Math.exp(-dt * 24);
       this.x = lerp(this.x, this.tx, k);
       this.y = lerp(this.y, this.ty, k);
       this.age = (this.age || 0) + dt;
@@ -4588,6 +4588,9 @@
       this.textField = null;
       this.chatChannel = 'zone';
       this.inputSendTimer = 0;
+      this._lastSentDx = 0;
+      this._lastSentDy = 0;
+      this._lastSentLock = null;
       this.time = 0;
       this.playTime = 0;
       this.dayTime = 20;
@@ -5689,11 +5692,18 @@
       }
 
       this.inputSendTimer += dt;
-      if (net.connected && net.online && net.joined && this.inputSendTimer >= 0.05) {
+      // Send direction/lock changes immediately; otherwise top up at 30 Hz so
+      // the authoritative server never waits a full 50 ms to learn new input.
+      const inputChanged = dx !== this._lastSentDx || dy !== this._lastSentDy ||
+        this.lockedTargetId !== this._lastSentLock;
+      if (net.connected && net.online && net.joined && (inputChanged || this.inputSendTimer >= 1 / 30)) {
         this.inputSendTimer = 0;
         const aim = this.getAimPoint();
         // The server stays authoritative while local movement is predicted immediately.
         net.send({ type: 'input', dx, dy, aimX: aim.x, aimY: aim.y, aim: p.aim, lockTargetId: this.lockedTargetId });
+        this._lastSentDx = dx;
+        this._lastSentDy = dy;
+        this._lastSentLock = this.lockedTargetId;
       }
     }
 
@@ -8828,11 +8838,12 @@
     drawParty() {
       if (!this.party.length) return;
       const ctx = this.ctx;
-      // On touch screens the chat panel occupies the left column, so move the
-      // party list into the free middle column instead of drawing over chat.
+      // Touch layout: chat owns the left column and the minimap owns the top
+      // right. Put party info in the free right slot below the minimap so it
+      // does not sit in the middle of the play area.
       const mobile = this.input.mobile;
-      const x = mobile ? 340 : 12;
-      const y = mobile ? 120 : (this.quest.active || this.quest.complete ? 186 : 124);
+      const x = mobile ? 620 : 12;
+      const y = mobile ? 182 : (this.quest.active || this.quest.complete ? 186 : 124);
       ctx.fillStyle = 'rgba(8,12,22,0.84)';
       ctx.fillRect(x, y, 180, 26 + this.party.length * 16);
       ctx.strokeStyle = '#ffd75e';

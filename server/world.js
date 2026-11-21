@@ -659,10 +659,11 @@ export class World {
 
   start() {
     if (this.timer) return;
-    // 50 ms = 20 updates per second. State snapshots go out at the same rate.
+    // 30 Hz keeps movement/attacks responsive while staying light on bandwidth.
+    // Snapshots are broadcast on the same tick, so clients see updates sooner.
     this.timer = setInterval(() => {
       try { this.tick(); } catch (err) { console.error('[world] tick error:', err); }
-    }, 50);
+    }, 1000 / 30);
   }
 
   stop() {
@@ -672,20 +673,21 @@ export class World {
   tick() {
     this.tickCount++;
     const now = Date.now();
+    const dt = 1 / 30;
 
     for (const client of this.clients) {
-      if (client.roomId && client.player) this.updatePlayer(client, 0.05, now);
+      if (client.roomId && client.player) this.updatePlayer(client, dt, now);
     }
 
     for (const [id, room] of this.rooms) {
       // Dungeons disappear when the last party member leaves.
       if (!room.public && room.players.size === 0) { this.rooms.delete(id); continue; }
 
-      this.updateEnemies(room, 0.05, now);
-      this.updateProjectiles(room, 0.05);
-      this.updatePickups(room, 0.05);
-      this.updateMeteors(room, 0.05);
-      if (room.public) this.maintainEnemyPopulation(room, 0.05);
+      this.updateEnemies(room, dt, now);
+      this.updateProjectiles(room, dt);
+      this.updatePickups(room, dt);
+      this.updateMeteors(room, dt);
+      if (room.public) this.maintainEnemyPopulation(room, dt);
 
       if (room.players.size > 0) this.sendRoom(room, this.buildState(room));
     }
