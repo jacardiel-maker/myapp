@@ -659,8 +659,8 @@ export class World {
 
   start() {
     if (this.timer) return;
-    // 30 Hz keeps movement/attacks responsive while staying light on bandwidth.
-    // Snapshots are broadcast on the same tick, so clients see updates sooner.
+    // 30 Hz is the stable sweet spot here. A 60 Hz loop made the server fall
+    // behind and actually lowered the snapshot rate on slower machines.
     this.timer = setInterval(() => {
       try { this.tick(); } catch (err) { console.error('[world] tick error:', err); }
     }, 1000 / 30);

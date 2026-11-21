@@ -4557,7 +4557,11 @@
   class Game {
     constructor(canvas) {
       this.canvas = canvas;
-      this.pixelRatio = clamp(window.devicePixelRatio || 1, 1, 2);
+      // Phones often report DPR 3+. Rendering every frame at 3x fills far too
+      // many pixels for a steady 60 fps. 1.5x stays sharp but cuts fill cost.
+      const coarsePointer = (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) ||
+        (navigator.maxTouchPoints || 0) > 0;
+      this.pixelRatio = clamp(window.devicePixelRatio || 1, 1, coarsePointer ? 1.5 : 2);
       canvas.width = Math.round(VIEW_W * this.pixelRatio);
       canvas.height = Math.round(VIEW_H * this.pixelRatio);
       this.ctx = canvas.getContext('2d');
@@ -5692,11 +5696,11 @@
       }
 
       this.inputSendTimer += dt;
-      // Send direction/lock changes immediately; otherwise top up at 30 Hz so
-      // the authoritative server never waits a full 50 ms to learn new input.
+      // Send direction/lock changes immediately; otherwise top up at 60 Hz to
+      // match the server simulation and keep the authoritative position close.
       const inputChanged = dx !== this._lastSentDx || dy !== this._lastSentDy ||
         this.lockedTargetId !== this._lastSentLock;
-      if (net.connected && net.online && net.joined && (inputChanged || this.inputSendTimer >= 1 / 30)) {
+      if (net.connected && net.online && net.joined && (inputChanged || this.inputSendTimer >= 1 / 60)) {
         this.inputSendTimer = 0;
         const aim = this.getAimPoint();
         // The server stays authoritative while local movement is predicted immediately.
@@ -6672,6 +6676,12 @@
     }
 
     startTutorialIfNeeded() {
+      // A modal tutorial blocks movement. Online login opens straight into the
+      // live world; the tutorial stays available from the menu / H key.
+      if (this.network.online) {
+        if (!this.tutorialDone) this.log('New here? Press H for the tutorial.', '#9fb0cd');
+        return;
+      }
       if (!this.tutorialDone) this.startTutorial();
     }
 
@@ -10257,6 +10267,7 @@
         { label: 'SETTINGS', action: 'settings', color: '#5b4b8c' },
         { label: 'ACCOUNT', action: 'openAccount', color: '#2f5f8c' },
         { label: 'SAVE', action: 'save' },
+        { label: 'TUTORIAL', action: 'openTutorial' },
         { label: 'CLOSE', action: 'closeMobileMenu', color: '#6b3542' }
       ];
       const cols = 4;
