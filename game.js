@@ -451,6 +451,14 @@
     dragon: { aura: { crit: 0.03, attack: 3 }, perLevel: { attack: 1.8, hp: 9 } }
   };
 
+  // Mirrors server/pets.js skill names so offline pets behave like online ones.
+  const PET_COMBAT = {
+    wolf: { name: 'Fierce Bite', color: '#c8d2e0', cd: 8 },
+    fairy: { name: 'Starlight Blessing', color: '#8be9fd', cd: 9 },
+    golem: { name: 'Earth Slam', color: '#d2b48c', cd: 10 },
+    dragon: { name: 'Fire Breath', color: '#ff8c42', cd: 9 }
+  };
+
   function petAuraStats(pet) {
     const def = pet && PET_AURAS[pet.type];
     if (!def) return {};
@@ -1588,7 +1596,9 @@
   const tileCache = new Map();
   const VARIANT_TILES = new Set([
     TILE_ID.GRASS, TILE_ID.WATER, TILE_ID.TREE, TILE_ID.SAND, TILE_ID.ROCK,
-    TILE_ID.CAVE, TILE_ID.CACTUS, TILE_ID.PATH, TILE_ID.HOUSE_ROOF, TILE_ID.HOUSE_WALL
+    TILE_ID.CAVE, TILE_ID.CACTUS, TILE_ID.PATH, TILE_ID.HOUSE_ROOF, TILE_ID.HOUSE_WALL,
+    TILE_ID.ICE, TILE_ID.SNOW, TILE_ID.LAVA, TILE_ID.ASH,
+    TILE_ID.SWAMP_WATER, TILE_ID.BOG, TILE_ID.ARENA_FLOOR
   ]);
 
   function tileVariant(seed) {
@@ -1725,6 +1735,69 @@
       setPx(g, 7, 2, '#8bd77a');
       setPx(g, 8, 5, '#a5e88a');
       setPx(g, 11, 7, '#a5e88a');
+    } else if (id === TILE_ID.ICE) {
+      const ice = ['#7fc4d8', '#8ed0e0', '#6fb9d1', '#99d7e2'][palette];
+      setRect(g, 0, 0, 16, 16, '#4d8ea6');
+      setRect(g, 1, 1, 14, 14, ice);
+      setRect(g, 2, 2, 7, 2, '#c8f1f5');
+      setRect(g, 9, 5, 4, 2, '#a9e3ed');
+      setRect(g, 3, 10, 6, 1, '#d5f5f7');
+      setRect(g, 11, 12, 3, 2, '#5aa5be');
+      setPx(g, 6 + variant % 4, 6, '#e6fbfb');
+      setPx(g, 13, 3 + variant % 4, '#3e7f98');
+    } else if (id === TILE_ID.SNOW) {
+      const snow = ['#dbe9ef', '#e6f1f4', '#cfdfe8', '#eef6f7'][palette];
+      setRect(g, 0, 0, 16, 16, '#b6cbd6');
+      setRect(g, 1, 1, 14, 14, snow);
+      setRect(g, 2 + variant % 4, 3, 6, 2, '#ffffff');
+      setRect(g, 8, 9 + variant % 3, 5, 2, '#c3d8e2');
+      setRect(g, 3, 12, 4, 1, '#f7ffff');
+      setPx(g, 12 + variant % 2, 5, '#9dbccb');
+    } else if (id === TILE_ID.LAVA) {
+      setRect(g, 0, 0, 16, 16, '#5a1f18');
+      setRect(g, 1, 1, 14, 14, '#b83b1d');
+      setRect(g, 2, 2, 7, 3, '#ff8b3d');
+      setRect(g, 8, 5, 5, 3, '#ffb347');
+      setRect(g, 3, 9, 6, 2, '#e85d24');
+      setRect(g, 10, 12, 4, 2, '#ff7a2f');
+      setPx(g, 4 + variant % 5, 6, '#ffe08a');
+      setPx(g, 12, 2 + variant % 3, '#ffd166');
+    } else if (id === TILE_ID.ASH) {
+      const ash = ['#4a4446', '#55504c', '#413d42', '#5a504e'][palette];
+      setRect(g, 0, 0, 16, 16, '#2e2b30');
+      setRect(g, 1, 1, 14, 14, ash);
+      setRect(g, 2, 3 + variant % 3, 5, 1, '#6c625d');
+      setRect(g, 9, 6, 4, 2, '#373238');
+      setRect(g, 4, 11, 6, 1, '#756861');
+      for (let i = 0; i < 7; i++) {
+        setPx(g, Math.floor(rng() * 16), Math.floor(rng() * 16), rng() < 0.6 ? '#8b7a6f' : '#262228');
+      }
+      setPx(g, 12, 3 + variant % 4, '#ff9d4d');
+    } else if (id === TILE_ID.SWAMP_WATER) {
+      setRect(g, 0, 0, 16, 16, '#1d3d2d');
+      setRect(g, 1, 1, 14, 14, '#254d36');
+      setRect(g, 2, 3, 6, 2, '#35694a');
+      setRect(g, 9, 6, 5, 2, '#1b3929');
+      setRect(g, 3, 11, 5, 1, '#3c7652');
+      setPx(g, 11 + variant % 3, 10, '#7fae63');
+      setPx(g, 5 + variant % 4, 6, '#5d8f50');
+    } else if (id === TILE_ID.BOG) {
+      const bog = ['#3b4d32', '#43543a', '#34452f', '#4a573b'][palette];
+      setRect(g, 0, 0, 16, 16, '#283426');
+      setRect(g, 1, 1, 14, 14, bog);
+      setRect(g, 2 + variant % 3, 3, 5, 1, '#5f7346');
+      setRect(g, 9, 8, 4, 2, '#2d3b29');
+      setRect(g, 4, 12, 6, 1, '#6b7f4d');
+      setPx(g, 13, 4 + variant % 4, '#94a85e');
+    } else if (id === TILE_ID.ARENA_FLOOR) {
+      const stone = ['#7e7165', '#887a6d', '#75695f', '#918176'][palette];
+      setRect(g, 0, 0, 16, 16, '#4a403a');
+      setRect(g, 1, 1, 14, 14, stone);
+      setRect(g, 1, 7, 14, 1, '#5d5148');
+      setRect(g, 7, 1, 1, 14, '#5d5148');
+      setRect(g, 3, 3, 3, 1, '#a29585');
+      setRect(g, 10, 10, 3, 1, '#a29585');
+      setPx(g, 12, 3 + variant % 3, '#b6a998');
     } else {
       setRect(g, 0, 0, 16, 16, '#d7bb76');
       setRect(g, 7, 3, 2, 10, '#3f9c5e');
@@ -3434,15 +3507,7 @@
       this.x = x;
       this.y = y;
       this.zoneMul = zoneMul;
-      const base = type === 'slime'
-        ? { hp: 46, damage: 8, speed: 44, range: 20, xp: 12, gold: 6, radius: 13, aggro: 240 }
-        : type === 'goblin'
-          ? { hp: 78, damage: 13, speed: 58, range: 24, xp: 22, gold: 11, radius: 13, aggro: 290 }
-          : type === 'brute'
-            ? { hp: 180, damage: 24, speed: 34, range: 30, xp: 34, gold: 18, radius: 16, aggro: 320 }
-            : type === 'scout'
-              ? { hp: 62, damage: 10, speed: 56, range: 190, xp: 26, gold: 14, radius: 12, aggro: 340 }
-              : { hp: 920, damage: 26, speed: 50, range: 34, xp: 400, gold: 320, radius: 20, aggro: 760 };
+      const base = ENEMY_BASE_STATS[type] || ENEMY_BASE_STATS.slime;
       this.maxHp = Math.round(base.hp * (type === 'boss' ? 1 : zoneMul));
       this.hp = this.maxHp;
       this.damage = base.damage * (type === 'boss' ? 1 : zoneMul);
@@ -3608,12 +3673,18 @@
       const alpha = this.alive ? 1 : clamp(this.deathTimer / 0.5, 0, 1);
       shadow(ctx, this.x, this.y, this.radius + 2, 6, 0.25 * alpha);
       drawBossWarning(ctx, this.slamX, this.slamY, this.slamWindup, game.time);
-      let sprite;
-      if (this.type === 'slime') sprite = slimeSprite(this.walkFrame);
-      else if (['goblin', 'scout', 'brute'].includes(this.type)) sprite = goblinSprite(this.walkFrame);
-      else sprite = bossSprite(Math.floor(game.time * 4) % 4);
-      const scale = this.type === 'boss' ? 5 : MONSTER_SPRITE_SCALE;
-      const tint = this.type === 'scout' ? 'hue-rotate(145deg) saturate(1.5)' : this.type === 'brute' ? 'hue-rotate(235deg) saturate(1.5)' : '';
+      const frame = this.type === 'boss' || this.type === 'mini_boss'
+        ? Math.floor(game.time * 4) % 4 : this.walkFrame;
+      const sprite = this.type.includes('slime') ? slimeSprite(frame)
+        : this.type.includes('goblin') || this.type.includes('scout') || this.type.includes('brute') ? goblinSprite(frame)
+          : bossSprite(frame);
+      const scale = this.type === 'boss' || this.type === 'mini_boss' ? 5 : MONSTER_SPRITE_SCALE;
+      let tint = '';
+      if (this.type.includes('frost')) tint = 'hue-rotate(180deg) saturate(1.8) brightness(1.2)';
+      else if (this.type.includes('fire') || this.type.includes('magma')) tint = 'hue-rotate(340deg) saturate(2.2) brightness(1.1)';
+      else if (this.type.includes('venom') || this.type.includes('swamp') || this.type.includes('bog')) tint = 'hue-rotate(80deg) saturate(2.0)';
+      else if (this.type === 'scout') tint = 'hue-rotate(145deg) saturate(1.5)';
+      else if (this.type === 'brute') tint = 'hue-rotate(235deg) saturate(1.5)';
       if (this.flash > 0) {
         ctx.save();
         ctx.globalAlpha = alpha;
@@ -3868,17 +3939,35 @@
     }
   }
 
-  // STAGE 4: a little companion that follows you and vacuums up loot.
+  // Companion that follows you, vacuums up loot, attacks and uses its skill.
+  // Online, the server is authoritative for damage, so the client copy only
+  // follows the player (visualOnly) while the server sends damage/fx events.
   class Pet {
-    constructor(x, y) {
+    constructor(x, y, data = null) {
       this.x = x;
       this.y = y;
-      this.name = 'Pixel Fox';
+      this.type = 'wolf';
+      this.level = 1;
+      this.name = 'Dire Wolf';
+      this.sync(data);
       this.radius = 8;
       this.life = 0;
+      this.attackCd = 0.7;
+      this.skillCd = 6;
+      this.skillFlash = 0;
+      this.visualOnly = false;
     }
-    update(dt, game) {
+    sync(data) {
+      if (!data || typeof data !== 'object') return;
+      if (PET_COMBAT[data.type]) this.type = data.type;
+      this.level = clamp(Math.floor(Number(data.level) || 1), 1, 20);
+      this.name = data.name || PET_COMBAT[this.type].name;
+    }
+    update(dt, game, visualOnly = false) {
       this.life += dt;
+      this.skillFlash = Math.max(0, this.skillFlash - dt);
+      this.sync(game.player && game.player.pet);
+      this.visualOnly = visualOnly;
       if (!game.player) return;
       const d = dist(this, game.player);
       if (d > 350) {
@@ -3889,10 +3978,89 @@
         const speed = clamp(d * 2.4, 70, 260);
         game.tryMove(this, Math.cos(a) * speed * dt, Math.sin(a) * speed * dt);
       }
+      if (visualOnly) return;
+
+      this.attackCd -= dt;
+      this.skillCd -= dt;
+      const def = PET_COMBAT[this.type];
+      const attack = Math.max(6, Number(game.player.finalStats && game.player.finalStats.attack) || 10);
+      const power = Math.round(attack * 0.35 + this.level * 2);
+      const angleGap = (a, b) => {
+        const gap = Math.abs(a - b) % TAU;
+        return gap > Math.PI ? TAU - gap : gap;
+      };
+      let target = null;
+      let nearest = 260;
+      for (const enemy of game.targetableEnemies()) {
+        const ed = dist(this, enemy);
+        if (ed < nearest) { target = enemy; nearest = ed; }
+      }
+
+      if (this.skillCd <= 0) {
+        if (this.type === 'fairy') {
+          const p = game.player;
+          if (p.hp < p.maxHp * 0.9 || p.mp < p.maxMp * 0.6) {
+            const heal = Math.round(p.maxHp * 0.12 + this.level * 2);
+            const mana = Math.round(p.maxMp * 0.1 + this.level);
+            p.hp = Math.min(p.maxHp, p.hp + heal);
+            p.mp = Math.min(p.maxMp, p.mp + mana);
+            game.addFloater(p.x, p.y - 58, `+${heal} HP`, def.color, 12);
+            game.effects.push(new Effect('ring', p.x, p.y - 8, { color: def.color, radius: 12, endRadius: 70, life: 0.5 }));
+            game.log(`${this.name} used ${def.name}!`, def.color);
+            this.skillFlash = 0.5;
+            this.skillCd = def.cd;
+          }
+        } else if (target) {
+          if (this.type === 'wolf') {
+            game.damageEnemy(target, Math.round(power * 2.2), game.player, false, 'pet bite');
+            game.effects.push(new Effect('slash', target.x, target.y - 10, {
+              element: 'steel', angle: angleTo(this, target), radius: 30, life: 0.3
+            }));
+            game.effects.push(new Effect('ring', target.x, target.y, { color: def.color, radius: 8, endRadius: 46, life: 0.35 }));
+          } else if (this.type === 'golem') {
+            game.effects.push(new Effect('ring', this.x, this.y, { color: def.color, radius: 12, endRadius: 120, life: 0.45 }));
+            for (const enemy of game.targetableEnemies()) {
+              if (dist(this, enemy) <= 120) game.damageEnemy(enemy, Math.round(power * 1.6), game.player, false, 'pet slam');
+            }
+            game.shake = Math.max(game.shake, 6);
+          } else if (this.type === 'dragon') {
+            const a = angleTo(this, target);
+            game.effects.push(new Effect('ring', this.x, this.y, { color: def.color, radius: 10, endRadius: 130, life: 0.45 }));
+            for (const enemy of game.targetableEnemies()) {
+              if (dist(this, enemy) <= 150 && angleGap(angleTo(this, enemy), a) <= 0.8) {
+                game.damageEnemy(enemy, Math.round(power * 1.8), game.player, false, 'pet fire');
+              }
+            }
+          }
+          game.log(`${this.name} used ${def.name}!`, def.color);
+          this.skillFlash = 0.5;
+          this.skillCd = def.cd;
+        }
+      }
+
+      if (target && this.attackCd <= 0) {
+        const a = angleTo(this, target);
+        game.damageEnemy(target, power, game.player, false, 'pet');
+        game.effects.push(new Effect('particle', this.x, this.y - 8, {
+          color: def.color, vx: Math.cos(a) * 70, vy: Math.sin(a) * 70, life: 0.25, size: 3
+        }));
+        this.attackCd = 1.1;
+      }
     }
     draw(ctx, game) {
       shadow(ctx, this.x, this.y, 8, 3, 0.2);
       drawSprite(ctx, petSprite(Math.floor(this.life * 6) % 4), this.x, this.y, 1.5);
+      if (this.skillFlash > 0) {
+        const def = PET_COMBAT[this.type];
+        const t = this.skillFlash / 0.5;
+        ctx.strokeStyle = def.color;
+        ctx.globalAlpha = t * 0.8;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y - 8, 12 + (1 - t) * 22, 0, TAU);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
       ctx.font = '9px monospace';
       ctx.textAlign = 'center';
       ctx.fillStyle = '#d8d0ff';
@@ -3904,33 +4072,54 @@
   // 5. WORLD MAPS + THE GAME CLASS (part A: setup and input)
   // ============================================================
 
-  // STAGE 3: three zones connected by portals.
+  // Mirrors server/zones.js so every map is reachable offline too.
   const ZONE_SPAWN = {
     forest: { x: 520, y: 420 },
     cave: { x: 270, y: 300 },
     desert: { x: 2780, y: 1980 },
     dungeon: { x: 768, y: 576 },
-    village: { x: 1552, y: 1168 }
+    village: { x: 1552, y: 1168 },
+    frost_cave: { x: 300, y: 320 },
+    volcano: { x: 320, y: 2000 },
+    swamp: { x: 450, y: 350 },
+    arena: { x: 768, y: 576 }
   };
 
   const PORTAL_DEFS = {
+    village: [
+      { x: 1552, y: 656, to: 'forest', label: 'Forest Gate', color: '#7bdc7b', arrive: { x: 520, y: 420 } },
+      { x: 1920, y: 1168, to: 'arena', label: 'PvP Arena', color: '#ff4d4d', arrive: { x: 768, y: 576 } }
+    ],
     forest: [
-      { x: 2860, y: 300, to: 'cave', label: 'Cave', color: '#b08bff', arrive: { x: 270, y: 300 } },
-      { x: 220, y: 2080, to: 'desert', label: 'Desert', color: '#ffb35c', arrive: { x: 2780, y: 1980 } }
+      { x: 2860, y: 300, to: 'cave', label: 'Caverns', color: '#b08bff', arrive: { x: 270, y: 300 } },
+      { x: 220, y: 2080, to: 'desert', label: 'Desert', color: '#ffb35c', arrive: { x: 2780, y: 1980 } },
+      { x: 2860, y: 2080, to: 'swamp', label: 'Swamp', color: '#2ecc71', arrive: { x: 450, y: 350 } },
+      { x: 480, y: 360, to: 'village', label: 'Village', color: '#ffd75e', arrive: { x: 1552, y: 720 } }
     ],
     cave: [
       { x: 230, y: 240, to: 'forest', label: 'Forest', color: '#7bdc7b', arrive: { x: 2820, y: 360 } },
-      { x: 2860, y: 2080, to: 'desert', label: 'Desert', color: '#ffb35c', arrive: { x: 220, y: 2080 } }
+      { x: 2860, y: 2080, to: 'frost_cave', label: 'Frost Cavern', color: '#70d6ff', arrive: { x: 300, y: 320 } },
+      { x: 2860, y: 300, to: 'desert', label: 'Desert', color: '#ffb35c', arrive: { x: 220, y: 2080 } }
     ],
     desert: [
-      { x: 2760, y: 1980, to: 'cave', label: 'Cave', color: '#b08bff', arrive: { x: 2820, y: 2080 } },
-      { x: 240, y: 260, to: 'forest', label: 'Forest', color: '#7bdc7b', arrive: { x: 270, y: 2080 } }
+      { x: 2760, y: 1980, to: 'cave', label: 'Caverns', color: '#b08bff', arrive: { x: 2820, y: 2080 } },
+      { x: 240, y: 260, to: 'forest', label: 'Forest', color: '#7bdc7b', arrive: { x: 270, y: 2080 } },
+      { x: 2860, y: 300, to: 'volcano', label: 'Volcano', color: '#ff5722', arrive: { x: 320, y: 2000 } }
+    ],
+    frost_cave: [
+      { x: 260, y: 280, to: 'cave', label: 'Caverns', color: '#b08bff', arrive: { x: 2800, y: 2040 } }
+    ],
+    volcano: [
+      { x: 280, y: 2040, to: 'desert', label: 'Desert', color: '#ffb35c', arrive: { x: 2800, y: 360 } }
+    ],
+    swamp: [
+      { x: 380, y: 300, to: 'forest', label: 'Forest', color: '#7bdc7b', arrive: { x: 2800, y: 2040 } }
+    ],
+    arena: [
+      { x: 768, y: 1000, to: 'village', label: 'Return to Village', color: '#ffd75e', arrive: { x: 1850, y: 1168 } }
     ],
     dungeon: [
       { x: 768, y: 120, to: 'forest', label: 'Exit Raid', color: '#7bdc7b', arrive: { x: 520, y: 420 } }
-    ],
-    village: [
-      { x: 1552, y: 656, to: 'forest', label: 'Forest Gate', color: '#7bdc7b', arrive: { x: 520, y: 420 } }
     ]
   };
 
@@ -3943,23 +4132,56 @@
     { type: 'healer', name: 'Healer Liora', x: 1424, y: 1168 },
     { type: 'scout', name: 'Scout Rowan', x: 1552, y: 1008 },
     { type: 'blacksmith', name: 'Blacksmith Borin', x: 1760, y: 1168 },
-    { type: 'villager', name: 'Farmer Pella', x: 1552, y: 1296 }
+    { type: 'villager', name: 'Farmer Pella', x: 1552, y: 1296 },
+    { type: 'bounty', name: 'Bounty Master Kenneth', x: 1424, y: 1008 },
+    { type: 'arena_master', name: 'Arena Master Torvald', x: 1880, y: 1168 },
+    { type: 'pet_tamer', name: 'Beastmaster Elan', x: 1680, y: 1350 }
   ];
 
   const BOSS_POS = { x: 1560, y: 1120 };
   const ZONE_ENEMY_COUNTS = {
-    forest: { slime: 15, goblin: 6 },
-    cave: { slime: 6, goblin: 7, brute: 4 },
-    desert: { slime: 8, goblin: 9, scout: 4 },
+    forest: { slime: 14, goblin: 6 },
+    cave: { slime: 6, goblin: 8, brute: 4 },
+    desert: { slime: 6, goblin: 8, scout: 6 },
+    frost_cave: { frost_slime: 10, ice_goblin: 6, frost_brute: 3 },
+    volcano: { fire_goblin: 9, magma_brute: 5, fire_scout: 4 },
+    swamp: { venom_slime: 8, swamp_scout: 7, bog_brute: 4 },
     dungeon: { goblin: 6 },
-    village: {}
+    village: {},
+    arena: {}
   };
-  const ZONE_MUL = { forest: 1, cave: 1.7, desert: 2.4, dungeon: 2.6, village: 1 };
+  const ZONE_MUL = {
+    forest: 1, cave: 1.6, desert: 2.2, swamp: 2.8, frost_cave: 3.4,
+    volcano: 4.2, dungeon: 2.6, village: 1, arena: 1
+  };
+
+  // Offline mirror of server/combat.js so elemental-zone monsters have real stats.
+  const ENEMY_BASE_STATS = {
+    slime: { hp: 46, damage: 8, speed: 44, range: 20, xp: 12, gold: 6, radius: 13, aggro: 240 },
+    goblin: { hp: 78, damage: 13, speed: 58, range: 24, xp: 22, gold: 11, radius: 13, aggro: 290 },
+    brute: { hp: 180, damage: 24, speed: 34, range: 30, xp: 34, gold: 18, radius: 16, aggro: 320 },
+    scout: { hp: 62, damage: 10, speed: 56, range: 190, xp: 26, gold: 14, radius: 12, aggro: 340 },
+    frost_slime: { hp: 70, damage: 12, speed: 40, range: 20, xp: 24, gold: 14, radius: 13, aggro: 260 },
+    ice_goblin: { hp: 110, damage: 18, speed: 55, range: 28, xp: 36, gold: 20, radius: 13, aggro: 300 },
+    frost_brute: { hp: 260, damage: 32, speed: 32, range: 32, xp: 55, gold: 30, radius: 17, aggro: 330 },
+    fire_goblin: { hp: 130, damage: 24, speed: 64, range: 26, xp: 45, gold: 25, radius: 13, aggro: 320 },
+    magma_brute: { hp: 320, damage: 40, speed: 36, range: 34, xp: 70, gold: 40, radius: 18, aggro: 350 },
+    fire_scout: { hp: 95, damage: 20, speed: 62, range: 200, xp: 48, gold: 26, radius: 12, aggro: 360 },
+    venom_slime: { hp: 85, damage: 14, speed: 46, range: 22, xp: 28, gold: 16, radius: 13, aggro: 270 },
+    swamp_scout: { hp: 80, damage: 16, speed: 58, range: 200, xp: 38, gold: 22, radius: 12, aggro: 340 },
+    bog_brute: { hp: 240, damage: 28, speed: 32, range: 30, xp: 50, gold: 28, radius: 17, aggro: 320 },
+    mini_boss: { hp: 600, damage: 30, speed: 48, range: 32, xp: 200, gold: 150, radius: 19, aggro: 500 },
+    boss: { hp: 920, damage: 26, speed: 50, range: 34, xp: 400, gold: 320, radius: 20, aggro: 760 }
+  };
 
   const ZONE_POINTS = {
     forest: [ZONE_SPAWN.forest, ...PORTAL_DEFS.forest.map(p => p.arrive), ...NPC_DEFS],
     cave: [ZONE_SPAWN.cave, ...PORTAL_DEFS.cave.map(p => p.arrive), BOSS_POS],
     desert: [ZONE_SPAWN.desert, ...PORTAL_DEFS.desert.map(p => p.arrive)],
+    frost_cave: [ZONE_SPAWN.frost_cave, ...PORTAL_DEFS.frost_cave.map(p => p.arrive)],
+    volcano: [ZONE_SPAWN.volcano, ...PORTAL_DEFS.volcano.map(p => p.arrive)],
+    swamp: [ZONE_SPAWN.swamp, ...PORTAL_DEFS.swamp.map(p => p.arrive)],
+    arena: [ZONE_SPAWN.arena, ...PORTAL_DEFS.arena.map(p => p.arrive)],
     dungeon: [ZONE_SPAWN.dungeon, ...PORTAL_DEFS.dungeon.map(p => p.arrive)],
     village: [ZONE_SPAWN.village, ...PORTAL_DEFS.village.map(p => p.arrive), ...VILLAGE_NPC_DEFS]
   };
@@ -4179,42 +4401,68 @@
   }
 
   function createZone(id) {
-    const isArena = id === 'dungeon';
-    const w = isArena ? 48 : 96;
-    const h = isArena ? 36 : 72;
+    const isDungeon = id === 'dungeon';
+    const isArena = id === 'arena';
+    const w = isDungeon || isArena ? 48 : 96;
+    const h = isDungeon || isArena ? 36 : 72;
     const tiles = new Uint8Array(w * h);
-    const base = id === 'cave' || isArena ? TILE_ID.CAVE
-      : id === 'forest' || id === 'village' ? TILE_ID.GRASS : TILE_ID.SAND;
 
-    // Start with open terrain and a cave/dungeon border. Decorative patches follow.
+    // Mirrors server/zones.js terrain so offline maps look and block like online.
+    let baseTile = TILE_ID.GRASS;
+    let wallTile = TILE_ID.ROCK;
+    if (id === 'cave' || isDungeon) { baseTile = TILE_ID.CAVE; wallTile = TILE_ID.ROCK; }
+    else if (id === 'desert') { baseTile = TILE_ID.SAND; wallTile = TILE_ID.ROCK; }
+    else if (id === 'frost_cave') { baseTile = TILE_ID.ICE; wallTile = TILE_ID.SNOW; }
+    else if (id === 'volcano') { baseTile = TILE_ID.ASH; wallTile = TILE_ID.ROCK; }
+    else if (id === 'swamp') { baseTile = TILE_ID.BOG; wallTile = TILE_ID.TREE; }
+    else if (isArena) { baseTile = TILE_ID.ARENA_FLOOR; wallTile = TILE_ID.ROCK; }
+
     for (let y = 0; y < h; y++) {
       for (let x = 0; x < w; x++) {
-        const border = (isArena || id === 'cave') &&
-          (x < 2 || y < 2 || x >= w - 2 || y >= h - 2);
-        tiles[y * w + x] = border ? TILE_ID.ROCK : base;
+        const border = x < 2 || y < 2 || x >= w - 2 || y >= h - 2;
+        tiles[y * w + x] = border ? wallTile : baseTile;
       }
     }
-    // Add small, deterministic obstacle patches and clear rings around landmarks.
-    if (id === 'forest' || id === 'desert') {
-      const rng = mulberry32(id === 'forest' ? 4101 : 4103);
-      const safePoints = [ZONE_SPAWN[id], ...PORTAL_DEFS[id].flatMap(p => [p, p.arrive]),
-        ...(id === 'forest' ? NPC_DEFS : [])];
+    if (isArena) {
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        if (x < 3 || y < 3 || x >= w - 3 || y >= h - 3) tiles[y * w + x] = TILE_ID.ROCK;
+      }
+    }
+
+    // Deterministic obstacle patches, with the same clear rings as the server.
+    if (id !== 'village' && !isDungeon && !isArena) {
+      const rng = mulberry32(
+        id === 'forest' ? 4101 :
+        id === 'cave' ? 4102 :
+        id === 'desert' ? 4103 :
+        id === 'frost_cave' ? 4104 :
+        id === 'volcano' ? 4105 :
+        id === 'swamp' ? 4106 : 4107
+      );
+      const safePoints = [
+        ZONE_SPAWN[id] || { x: 500, y: 500 },
+        ...(PORTAL_DEFS[id] ? PORTAL_DEFS[id].flatMap(p => [p, p.arrive]) : []),
+        ...(id === 'forest' ? NPC_DEFS : [])
+      ];
       for (let y = 5; y < h - 5; y++) {
         for (let x = 5; x < w - 5; x++) {
-          if (rng() > 0.018) continue;
+          if (rng() > 0.02) continue;
           const px = x * TILE + TILE / 2;
           const py = y * TILE + TILE / 2;
-          if (safePoints.some(p => Math.hypot(p.x - px, p.y - py) < 230)) continue;
-          const radius = rng() < 0.28 ? 2 : 1;
+          if (safePoints.some(p => Math.hypot(p.x - px, p.y - py) < 220)) continue;
+          const radius = rng() < 0.3 ? 2 : 1;
           for (let oy = -radius; oy <= radius; oy++) {
             for (let ox = -radius; ox <= radius; ox++) {
               if (Math.abs(ox) + Math.abs(oy) > radius + 1) continue;
               const tx = x + ox;
               const ty = y + oy;
               if (tx < 2 || ty < 2 || tx >= w - 2 || ty >= h - 2) continue;
-              tiles[ty * w + tx] = id === 'forest'
-                ? (rng() < 0.72 ? TILE_ID.TREE : TILE_ID.WATER)
-                : TILE_ID.CACTUS;
+              if (id === 'forest') tiles[ty * w + tx] = rng() < 0.7 ? TILE_ID.TREE : TILE_ID.WATER;
+              else if (id === 'desert') tiles[ty * w + tx] = TILE_ID.CACTUS;
+              else if (id === 'frost_cave') tiles[ty * w + tx] = rng() < 0.6 ? TILE_ID.SNOW : TILE_ID.ROCK;
+              else if (id === 'volcano') tiles[ty * w + tx] = rng() < 0.6 ? TILE_ID.LAVA : TILE_ID.ROCK;
+              else if (id === 'swamp') tiles[ty * w + tx] = rng() < 0.6 ? TILE_ID.SWAMP_WATER : TILE_ID.TREE;
+              else if (id === 'cave') tiles[ty * w + tx] = TILE_ID.ROCK;
             }
           }
         }
@@ -4223,12 +4471,17 @@
     if (id === 'village') paintVillage({ w, h, tiles });
     return {
       id, w, h, tiles, pixelW: w * TILE, pixelH: h * TILE,
-      name: isArena ? 'Raid Arena' : id === 'village' ? 'Hearthvale Village' : id[0].toUpperCase() + id.slice(1)
+      name: isDungeon ? 'Raid Arena' :
+            isArena ? 'Colosseum PvP Arena' :
+            id === 'village' ? 'Hearthvale Village' :
+            id === 'frost_cave' ? 'Frost Cavern' :
+            id === 'volcano' ? 'Inferno Crater' :
+            id === 'swamp' ? 'Toxic Marsh' :
+            id[0].toUpperCase() + id.slice(1)
     };
   }
 
-  // Server-only zones (frost_cave, volcano, swamp, arena) have no offline spawn
-  // or enemy tables. Map them to a fully defined offline zone instead of crashing.
+  // All public zones now have offline spawn, portal, enemy and tile data.
   function offlineZoneId(zoneId) {
     return ZONE_SPAWN[zoneId] && PORTAL_DEFS[zoneId] && ZONE_ENEMY_COUNTS[zoneId] && ZONE_POINTS[zoneId]
       ? zoneId : 'village';
@@ -4614,11 +4867,15 @@
       this.mobileMenuOpen = false; // Touch-friendly feature drawer.
 
       this.zones = {
+        village: createZone('village'),
         forest: createZone('forest'),
         cave: createZone('cave'),
         desert: createZone('desert'),
-        dungeon: createZone('dungeon'),
-        village: createZone('village')
+        frost_cave: createZone('frost_cave'),
+        volcano: createZone('volcano'),
+        swamp: createZone('swamp'),
+        arena: createZone('arena'),
+        dungeon: createZone('dungeon')
       };
       this.zoneId = 'forest';
       this.zone = this.zones.forest;
@@ -4961,7 +5218,7 @@
       }
 
       if (this.panel) {
-        if (['escape', 'i', 'k', 'f', 'b', 'm', 'g', 'r', 't'].includes(k)) {
+        if (['escape', 'i', 'k', 'f', 'b', 'm', 'g', 'r', 't', 'c'].includes(k)) {
           this.panel = null;
           this.clearInput();
           this.audio.sfx('ui');
@@ -4997,6 +5254,7 @@
         case 'g': this.panel = 'guild'; if (this.network.online) this.network.send({ type: 'guildInfo' }); break;
         case 'r': this.panel = 'craft'; break;
         case 't': this.panel = 'talents'; break;
+        case 'c': this.panel = 'worldMap'; this.audio.sfx('ui'); break;
         case 'y': this.panel = 'achievements'; this.audio.sfx('ui'); break;
         case 'u': this.panel = 'daily'; this.audio.sfx('ui'); break;
         case 'l': this.toggleLockTarget(); break;
@@ -5636,6 +5894,8 @@
       p.dashTime = Math.max(0, p.dashTime - dt);
       for (let i = 0; i < 4; i++) p.skillCd[i] = Math.max(0, (p.skillCd[i] || 0) - dt);
       this.updateFamiliar(dt, false);
+      // Damage is server-authoritative online; the pet still follows locally.
+      if (this.pet) this.pet.update(dt, this, true);
       if (p.emote) {
         if (typeof p.emote === 'object') {
           p.emote.time -= dt;
@@ -5750,6 +6010,10 @@
       if (Number.isFinite(data.dashTime)) p.dashTime = Math.max(0, data.dashTime);
       if (Number.isFinite(data.dashDir)) p.dashDir = data.dashDir;
       if (data.spec !== undefined) p.spec = data.spec || '';
+      if (data.pet) {
+        if (!this.pet) this.pet = new Pet(p.x + 24, p.y + 18, data.pet);
+        else this.pet.sync(data.pet);
+      }
       if (data.stats && typeof data.stats === 'object') {
         p.finalStats = Object.assign({}, p.finalStats, data.stats);
         if (Number.isFinite(data.stats.crit)) p.critChance = data.stats.crit;
@@ -5839,7 +6103,7 @@
         this.zoneId = zoneId;
         this.zone = this.zones[zoneId] || this.zones.forest;
         this.minimapCache = null;
-        this.pet = null;                 // Pet is an offline-only visual helper.
+        this.pet = p.pet ? new Pet(p.x + 24, p.y + 18, p.pet) : null;
         this.familiar = null;
         this.otherPlayers = [];          // Remove the simulated offline crowd.
         this.party = [];
@@ -6136,6 +6400,22 @@
       if (visual === 'familiar') {
         if (isSelf) this.familiar = new Familiar(x + 26, y - 20);
         ring(x, y - 8, 12, 90, 0.5);
+        return;
+      }
+      if (visual === 'petAttack') {
+        const tx = Number.isFinite(ev.tx) ? ev.tx : x;
+        const ty = Number.isFinite(ev.ty) ? ev.ty : y;
+        line(x, y - 8, tx, ty - 8, 0.16, 3);
+        return;
+      }
+      if (visual === 'petSkill' || visual === 'petHeal') {
+        const tx = Number.isFinite(ev.tx) ? ev.tx : x;
+        const ty = Number.isFinite(ev.ty) ? ev.ty : y;
+        const radius = clamp(Number(ev.radius) || 80, 20, 160);
+        ring(tx, ty, 10, radius, 0.45);
+        burst(tx, ty, 12, 24, 130, 0.4);
+        if (isSelf && ev.name) this.addFloater(tx, ty - 48, ev.name, color, 10);
+        if (visual === 'petHeal' && isSelf && ev.text) this.addFloater(tx, ty - 70, ev.text, color, 11);
         return;
       }
       if (visual !== 'skill') return;
@@ -6969,6 +7249,22 @@
       return true;
     }
 
+    worldTravel(zoneId) {
+      if (!ZONE_SPAWN[zoneId]) return;
+      if (zoneId === this.zoneId) { this.panel = null; return; }
+      if (this.network.online) {
+        // The server checks that a portal from the current room exists.
+        this.network.send({ type: 'worldTravel', zoneId });
+        this.panel = null;
+        return;
+      }
+      if (!this.zones[zoneId]) {
+        this.log('That map is not available offline.', '#ffcf70');
+        return;
+      }
+      this.travelTo({ to: zoneId, arrive: ZONE_SPAWN[zoneId] });
+    }
+
     // ---------- Combat ----------
 
     damageEnemy(enemy, amount, source, crit = false, kind = 'hit', opts = {}) {
@@ -7524,6 +7820,10 @@
     }
 
     handleAction(action) {
+      if (action.startsWith('worldTravel:')) {
+        this.worldTravel(action.slice(12));
+        return;
+      }
       if (action.startsWith('claimAch:')) {
         const id = action.slice(9);
         if (this.network.online) this.network.send({ type: 'claim_achievement', id });
@@ -7714,6 +8014,7 @@
         case 'openDaily': this.panel = 'daily'; break;
         case 'openLeaderboardModal': this.panel = 'leaderboardModal'; if (this.network.online) this.network.send({ type: 'get_leaderboard', category: 'level' }); break;
         case 'openPets': this.panel = 'pets'; break;
+        case 'openWorldMap': this.panel = 'worldMap'; break;
         case 'tradeLock': if (this.network.online) this.network.send({ type: 'trade_lock' }); break;
         case 'tradeConfirm': if (this.network.online) this.network.send({ type: 'trade_confirm' }); break;
         case 'tradeCancel': if (this.network.online) this.network.send({ type: 'trade_cancel' }); this.panel = null; break;
@@ -8145,6 +8446,47 @@
       });
     }
 
+    drawWorldMapPanel() {
+      const ctx = this.ctx;
+      const x = 110;
+      const y = 44;
+      const w = 740;
+      const h = 452;
+      panel(ctx, x, y, w, h, 'WORLD MAP - Fast Travel');
+      const zones = [
+        { id: 'village', label: 'Hearthvale Village', desc: 'Safe hub - shops, healer, NPCs', color: '#ffd75e' },
+        { id: 'forest', label: 'Whispering Forest', desc: 'Starter quests - slimes, goblins', color: '#7bdc7b' },
+        { id: 'cave', label: 'Mount Veyr Cave', desc: 'Ore and the first boss', color: '#b08bff' },
+        { id: 'desert', label: 'Sunscorch Desert', desc: 'Scouts and seal-essence', color: '#ffb35c' },
+        { id: 'swamp', label: 'Toxic Marsh', desc: 'Venom slimes and bog brutes', color: '#51cf66' },
+        { id: 'frost_cave', label: 'Frost Cavern', desc: 'Ice goblins and frost brutes', color: '#70d6ff' },
+        { id: 'volcano', label: 'Inferno Crater', desc: 'Fire goblins and magma brutes', color: '#ff6b6b' },
+        { id: 'arena', label: 'Colosseum Arena', desc: 'PvP duels with other players', color: '#ff8fa3' }
+      ];
+      ctx.textAlign = 'left';
+      ctx.font = '11px monospace';
+      ctx.fillStyle = '#8ee6ff';
+      ctx.fillText(`Current: ${this.zone ? this.zone.name : this.zoneId}`, x + 18, y + 52);
+      zones.forEach((zone, i) => {
+        const bx = x + 18 + (i % 4) * 182;
+        const by = y + 74 + Math.floor(i / 4) * 132;
+        const here = this.zoneId === zone.id;
+        this.button(bx, by, 168, 66, `${here ? '> ' : ''}${zone.label}`, `worldTravel:${zone.id}`, {
+          color: here ? '#3f7d55' : '#34405c',
+          border: here ? '#8ee6a8' : zone.color,
+          fontSize: 11
+        });
+        ctx.font = '9px monospace';
+        ctx.fillStyle = '#9fb0cd';
+        ctx.fillText(zone.desc, bx + 2, by + 82);
+      });
+      ctx.font = '10px monospace';
+      ctx.fillStyle = '#8290aa';
+      ctx.fillText(this.network.online
+        ? 'Online: the server validates and applies each trip.'
+        : 'Offline: travel is instant. Press C or ESC to close.', x + 18, y + h - 20);
+    }
+
     promptTradeInvite(fromId, fromName) {
       this.tradeInvite = { fromId, fromName: fromName || 'A player' };
       this.log(`${this.tradeInvite.fromName} invited you to trade.`, '#ffd75e');
@@ -8222,6 +8564,7 @@
       else if (this.panel === 'leaderboardModal') this.drawLeaderboardModalPanel();
       else if (this.panel === 'trade') this.drawTradePanel();
       else if (this.panel === 'pets') this.drawPetsPanel();
+      else if (this.panel === 'worldMap') this.drawWorldMapPanel();
       else if (this.panel === 'account') this.drawAccountPanel();
 
       if (this.paused) this.drawPauseMenu();
@@ -8722,6 +9065,7 @@
       const isLeader = !this.network.online ||
         String(p.partyLeaderId) === String(this.network.playerId);
       const tabs = [
+        ['MAP', 'openWorldMap', '#3f5f8f'],
         ['PTY', 'party', hasParty ? '#3f5f8f' : '#3a3f50'],
         ['OUT', 'partyLeave', hasParty ? '#5b4b6c' : '#3a3f50'],
         ['DIS', 'partyDisband', hasParty && isLeader ? '#6b3542' : '#3a3f50']
@@ -8733,7 +9077,7 @@
         );
       }
       tabs.forEach((tab, i) => {
-        this.button(270 + i * 55, 12, 50, 24, tab[0], tab[1],
+        this.button(270 + i * 51, 12, 48, 24, tab[0], tab[1],
           { color: tab[2], fontSize: tab[0].length > 1 ? 9 : 10 });
       });
     }
@@ -8799,10 +9143,11 @@
         this.clickRegions.push({ x, y, w: 70, h: 62, action: 'skill' + i });
       }
       if (this.pet) {
+        const petDef = PET_COMBAT[this.pet.type] || PET_COMBAT.wolf;
         ctx.font = '10px monospace';
         ctx.textAlign = 'center';
         ctx.fillStyle = '#d8d0ff';
-        ctx.fillText('Pet: auto-loot ON', VIEW_W / 2, VIEW_H - 10);
+        ctx.fillText(`Pet: ${petDef.name} (auto)`, VIEW_W / 2, VIEW_H - 10);
       }
     }
 
@@ -10254,6 +10599,7 @@
         { label: 'DAILY', action: 'openDaily' },
         { label: 'LEADERBOARD', action: 'openLeaderboardModal' },
         { label: 'PETS', action: 'openPets' },
+        { label: 'WORLD MAP', action: 'openWorldMap' },
         { label: 'AUCTION', action: 'openAuction', online: true },
         { label: 'MAIL', action: 'openMail', online: true },
         { label: 'GUILD', action: 'openGuild', online: true },

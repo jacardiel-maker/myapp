@@ -16,6 +16,7 @@ export const PET_TYPES = {
     aura: { attack: 4, speed: 6 },
     perLevel: { attack: 1.5, hp: 8 },
     skillName: 'Fierce Bite',
+    cd: 8,
     desc: 'Loyal canine hunter. Increases owner attack power and pounces on targets.'
   },
   fairy: {
@@ -25,6 +26,7 @@ export const PET_TYPES = {
     aura: { manaRegen: 1.2, mana: 20 },
     perLevel: { manaRegen: 0.3, hp: 6 },
     skillName: 'Starlight Blessing',
+    cd: 9,
     desc: 'Luminous spirit. Heals owner when low on health and bolsters mana flow.'
   },
   golem: {
@@ -34,6 +36,7 @@ export const PET_TYPES = {
     aura: { defense: 3, hp: 25 },
     perLevel: { defense: 1.2, hp: 14 },
     skillName: 'Earth Slam',
+    cd: 10,
     desc: 'Miniature bulwark. Grants bonus armor and draws enemy aggression.'
   },
   dragon: {
@@ -43,6 +46,7 @@ export const PET_TYPES = {
     aura: { crit: 0.03, attack: 3 },
     perLevel: { attack: 1.8, hp: 9 },
     skillName: 'Fire Breath',
+    cd: 9,
     desc: 'Fierce winged beast. Enhances critical strikes and scorches foes in an arc.'
   }
 };

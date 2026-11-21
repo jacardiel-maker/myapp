@@ -341,6 +341,8 @@ export class World {
     client.hasteTime = 0;
     client.familiarTime = 0;
     client.familiarCd = 0;
+    client.petAttackCd = 0;
+    client.petSkillCd = 5;
     client.dashTime = 0;
     client.dashDir = 0;
     client.stamina = 100;
@@ -802,6 +804,8 @@ export class World {
     client.invuln = Math.max(0, client.invuln - dt);
     client.hasteTime = Math.max(0, client.hasteTime - dt);
     client.familiarTime = Math.max(0, client.familiarTime - dt);
+    client.petAttackCd = Math.max(0, (client.petAttackCd || 0) - dt);
+    client.petSkillCd = Math.max(0, (client.petSkillCd || 0) - dt);
     client.inCombat = Math.max(0, client.inCombat - dt);
 
     if (client.emote) {
@@ -840,6 +844,9 @@ export class World {
         }
       }
     }
+
+    // Pets fight alongside their owner and trigger their signature skill.
+    if (client.alive && client.character.pet) this.updatePetCombat(client, room, stats);
 
     if (!client.alive) {
       client.respawn -= dt;
@@ -1116,6 +1123,76 @@ export class World {
     }
 
     if (enemy.hp <= 0) this.killEnemy(room, enemy, source);
+  }
+
+  // Pets are full combat companions: a basic attack plus their signature
+  // skill. All damage and healing stays authoritative on the server; the
+  // client only receives hit/fx packets.
+  updatePetCombat(client, room, stats) {
+    const pet = client.character.pet;
+    if (!pet || !PET_TYPES[pet.type]) return;
+    const def = PET_TYPES[pet.type];
+    const level = clamp(Math.floor(Number(pet.level) || 1), 1, 20);
+    const power = Math.max(6, Math.round(stats.attack * 0.35 + level * 2));
+
+    let target = null;
+    let nearest = 280;
+    for (const enemy of room.enemies.values()) {
+      if (!enemy.alive) continue;
+      const d = dist(client, enemy);
+      if (d < nearest) { target = enemy; nearest = d; }
+    }
+
+    const fx = (visual, data = {}) => this.eventRoom(room, 'fx', {
+      visual,
+      ownerId: client.id,
+      ownerName: client.character.name,
+      x: round(client.x, 1),
+      y: round(client.y, 1),
+      color: def.color,
+      name: def.skillName,
+      ...data
+    });
+
+    if (client.petSkillCd <= 0) {
+      if (pet.type === 'fairy') {
+        if (client.hp < stats.maxHp * 0.9 || client.mp < stats.maxMp * 0.6) {
+          const heal = Math.round(stats.maxHp * 0.12 + level * 2);
+          client.hp = Math.min(stats.maxHp, client.hp + heal);
+          client.mp = Math.min(stats.maxMp, client.mp + Math.round(stats.maxMp * 0.1));
+          fx('petHeal', { text: `+${heal} HP` });
+          this.syncVitals(client);
+          client.petSkillCd = def.cd || 9;
+        }
+      } else if (target) {
+        if (pet.type === 'wolf') {
+          this.damageEnemy(room, target, Math.round(power * 2.2), client, false, 'pet bite');
+          fx('petSkill', { tx: round(target.x, 1), ty: round(target.y, 1), radius: 46 });
+        } else if (pet.type === 'golem') {
+          for (const enemy of room.enemies.values()) {
+            if (!enemy.alive || dist(client, enemy) > 120) continue;
+            this.damageEnemy(room, enemy, Math.round(power * 1.6), client, false, 'pet slam');
+          }
+          fx('petSkill', { x: round(client.x, 1), y: round(client.y, 1), radius: 120 });
+        } else if (pet.type === 'dragon') {
+          const a = Math.atan2(target.y - client.y, target.x - client.x);
+          for (const enemy of room.enemies.values()) {
+            if (!enemy.alive) continue;
+            if (dist(client, enemy) > 150) continue;
+            if (angleDiff(Math.atan2(enemy.y - client.y, enemy.x - client.x), a) > 0.8) continue;
+            this.damageEnemy(room, enemy, Math.round(power * 1.8), client, false, 'pet fire');
+          }
+          fx('petSkill', { tx: round(target.x, 1), ty: round(target.y, 1), radius: 130 });
+        }
+        client.petSkillCd = def.cd || 9;
+      }
+    }
+
+    if (target && client.petAttackCd <= 0) {
+      this.damageEnemy(room, target, power, client, false, 'pet');
+      fx('petAttack', { tx: round(target.x, 1), ty: round(target.y, 1) });
+      client.petAttackCd = 1.1;
+    }
   }
 
   checkQuestComplete(client) {
@@ -1579,6 +1656,7 @@ export class World {
       case 'attack': this.handleAttack(client, message); break;
       case 'skill': this.handleSkill(client, message); break;
       case 'interact': this.handleInteract(client); break;
+      case 'worldTravel': this.handleWorldTravel(client, message); break;
       case 'openChest': this.handleOpenChest(client, message); break;
       case 'dungeon': this.handleDungeon(client); break;
       case 'leaveDungeon': this.handleLeaveDungeon(client); break;
@@ -2143,6 +2221,17 @@ export class World {
     if (chest.openedBy.length >= chest.ownerIds.length) room.pickups.delete(chest.id);
     this.sfx(client, 'pickup');
     this.sendCharacter(client);
+  }
+
+  handleWorldTravel(client, message) {
+    const room = this.rooms.get(client.roomId);
+    if (!room || !room.public) { this.error(client, 'Leave the dungeon before using the world map.'); return; }
+    const targetId = String((message && message.zoneId) || '');
+    const destination = this.rooms.get(targetId);
+    if (!destination || !destination.public) { this.error(client, 'That map is not available.'); return; }
+    if (targetId === client.roomId) return;
+    this.changeRoom(client, destination, ZONE_SPAWN[targetId] || { x: 520, y: 420 });
+    this.sfx(client, 'portal');
   }
 
   handleInteract(client) {
